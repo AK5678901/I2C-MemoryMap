@@ -1,0 +1,14 @@
+{
+  "devices": [
+    {
+      "name": "Sample Device 1byte address",
+      "address": "0x50",
+      "addr_width": 1
+    },
+    {
+      "name": "Sample Device 2byte address",
+      "address": "0x68",
+      "addr_width": 2
+    }
+  ]
+}

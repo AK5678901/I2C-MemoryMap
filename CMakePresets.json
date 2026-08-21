@@ -1,0 +1,57 @@
+{
+    "version": 8,
+    "configurePresets": [
+        {
+            "name": "ninja-debug",
+            "displayName": "Ninja Debug",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_C_COMPILER": "cl.exe"
+            },
+            "environment": {
+                "CL": "/utf-8 /EHsc"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": "Windows",
+                    "visualStudioArchitecture": "x64"
+                }
+            }
+        },
+        {
+            "name": "ninja-release",
+            "displayName": "Ninja Release",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/build/install/${presetName}",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_CXX_COMPILER": "cl.exe",
+                "CMAKE_C_COMPILER": "cl.exe"
+            },
+            "environment": {
+                "CL": "/utf-8 /EHsc"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": "Windows",
+                    "visualStudioArchitecture": "x64"
+                }
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "ninja-debug-build",
+            "configurePreset": "ninja-debug"
+        },
+        {
+            "name": "ninja-release-build",
+            "configurePreset": "ninja-release"
+        }
+    ]
+}

@@ -1,0 +1,9 @@
+[submodule "submodule/imgui"]
+	path = submodule/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "submodule/glfw"]
+	path = submodule/glfw
+	url = https://github.com/glfw/glfw.git
+[submodule "submodule/imgui_club"]
+	path = submodule/imgui_club
+	url = https://github.com/ocornut/imgui_club.git

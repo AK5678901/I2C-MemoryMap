@@ -1,0 +1,45 @@
+# --- ビルド環境・成果物 ---
+# CMake生成物とビルドディレクトリ
+out/
+build/
+dist/
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+Makefile
+*.cmake
+*.ninja
+build.ninja
+compile_commands.json
+
+# --- OS・エディタ関連 ---
+# VS Code
+.vscode/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- 実行ファイル・オブジェクトファイル ---
+# C++コンパイル成果物
+*.exe
+*.out
+*.obj
+*.o
+*.a
+*.lib
+*.so
+*.dylib
+*.pdb
+*.ilk
+
+# imgui
+imgui.ini

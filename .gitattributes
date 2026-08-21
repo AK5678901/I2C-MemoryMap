@@ -1,0 +1,9 @@
+# 1. すべてのテキストファイルを自動で検出し、Git内部では LF にする
+* text=auto
+
+# 2. Windowsで実行するスクリプト系は CRLF を強制する
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 3. 必要に応じて他も指定（例: プロジェクトの設定ファイルなど）
+# *.ps1 text eol=crlf
