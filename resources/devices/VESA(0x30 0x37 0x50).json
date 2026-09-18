@@ -1,0 +1,25 @@
+{
+  "devices": [
+    {
+      "name": "VESA Segment pointer 0x30",
+      "dev_addr_7bit": "0x30",
+      "reg_addr_bytes": 0,
+      "auto_addr_inc": true,
+      "endian": "little"
+    },
+    {
+      "name": "VESA DDC/CI Display Device 0x37",
+      "dev_addr_7bit": "0x37",
+      "reg_addr_bytes": 1,
+      "auto_addr_inc": false,
+      "endian": "little"
+    },
+    {
+      "name": "VESA E-DDC 0x50",
+      "dev_addr_7bit": "0x50",
+      "reg_addr_bytes": 1,
+      "auto_addr_inc": true,
+      "endian": "little"
+    }
+  ]
+}

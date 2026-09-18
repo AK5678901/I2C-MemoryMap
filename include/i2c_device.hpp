@@ -5,82 +5,147 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <limits>
+#include <algorithm>
 
 class I2CDevice {
-protected:
-    std::string device_name_;
-    uint8_t i2c_dev_addr_;
-    int reg_addr_bytes_;
-    uint32_t reg_map_size_;
-    bool is_read_;
-
 public:
-    // 上位側が安全に受け取るためのデータ構造
+
+    enum class I2CBusCondition {
+        START_Standard,
+        START_Repeated,
+        STOP
+    };
+
+    struct CommandStat {
+        std::string command_name;
+        uint32_t call_count = 0;
+        double min_interval = std::numeric_limits<double>::max();
+        double max_interval = 0.0;
+        double last_timestamp = -1.0;
+        std::vector<double> intervals;
+    };
+
+    // i2c_device.hpp の RegisterInfo 内に追加するイメージ
+    struct BitFieldInfo {
+        std::string name;
+        uint8_t byte_offset;
+        uint8_t bit_offset;
+        uint8_t bit_width;
+        bool is_little_endian;
+    };
+
+    // 1つのレジスタが持つ情報（名前とデータ）
+    struct RegisterInfo {
+        std::string name = "";
+        std::vector<uint8_t> data_w;
+        std::vector<uint8_t> data_r;
+        std::vector<bool> byte_has_written;
+        std::vector<bool> byte_has_read;
+        std::vector<BitFieldInfo> bit_fields_write; // write用ビット情報
+        std::vector<BitFieldInfo> bit_fields_read; // read用ビット情報
+    };
+
     struct SnapshotView {
-        std::vector<uint8_t> memory_w;
-        std::vector<uint8_t> memory_r;
-        std::vector<bool> byte_has_written; // Writeアクセス履歴
-        std::vector<bool> byte_has_read;    // Readアクセス履歴
-        bool is_write;         // 最後に更新されたのがWriteかどうか
-        int32_t changed_index;  // 最後に更新されたインデックス
+        std::map<uint32_t, RegisterInfo> registers;
+        bool is_write;
+        uint32_t changed_reg_addr;
+        int32_t changed_index;
+    };
+
+    // 一度設定されたら変わらない値（コンフィグ）
+    // 外部から設定しやすくするために public に移動
+    struct Config {
+        std::string device_name;
+        uint8_t i2c_dev_addr;
+        int reg_addr_bytes;
+        bool auto_addr_inc;
+        bool support_direct_read_from_default_reg;
+        uint32_t default_reg_addr; // support_direct_read_from_default_reg_が有効の時のみ、STOP conditionでreg_pointer_ = default_reg_addr_ となる
+        uint32_t reg_map_size;
+        bool is_little_endian;
     };
 
 private:
-    //アドレスポインタ。write時に更新される
-    int writeDataCount_ = 0;
-    uint32_t reg_pointer_; //レジスタアドレス
+    Config config_;
 
-    //ある時点のレジスタマップ。write用とread用を分けておく
-    std::vector<uint8_t> reg_map_w_ = std::vector<uint8_t>(65536, 0x00);
-    std::vector<uint8_t> reg_map_r_ = std::vector<uint8_t>(65536, 0x00);
+    // トランザクションごとに変化する値（ランタイムステート）
+    struct State {
+        I2CBusCondition bus_condition = I2CBusCondition::STOP;
+        uint32_t reg_pointer = 0;
+        bool is_read = false;
+        int write_data_count = 0;
+        bool is_new_register_addr_just_set = false; // コマンドID方式の時(=1つのコマンドIDに複数バイト紐づくとき、コマンド指定後の最初のライトもしくはリードの前に、RegisterInfoのdata_w、data_rをクリアする必要があるため、コマンドID指定直後にフラグを立てる)
+    } state_;
 
-    //バイトごとのアクセス履歴の現在状態
-    std::vector<bool> byte_has_written_ = std::vector<bool>(65536, false);
-    std::vector<bool> byte_has_read_ = std::vector<bool>(65536, false);
+    // レジスタアドレス毎の統計情報・コマンド名管理用
+    struct Statistics {
+        bool is_stat_counted = false;
+        std::map<uint32_t, std::string> command_names;
+        std::map<uint32_t, CommandStat> write_stats;
+        std::map<uint32_t, CommandStat> read_stats;
+    } stats_;
 
-    //レジスタマップが更新されたとき、reg_map_w_とreg_map_r_に時刻を付与して保存する。上位からの検索時に使用する
+    // ある時点のレジスタマップ。write用とread用を分けておく
+    std::map<uint32_t, RegisterInfo> registers_;
+
     struct Snapshot {
         double timestamp;
-        std::vector<uint8_t> memory_w;
-        std::vector<uint8_t> memory_r;
-        std::vector<bool> byte_has_written; //履歴時点のWriteアクセス状態
-        std::vector<bool> byte_has_read;    //履歴時点のReadアクセス状態
-        bool is_write; // true: writeによる更新, false: readによる更新
-        int32_t changed_index; // 変更された単一のインデックス
+        std::map<uint32_t, RegisterInfo> registers;
+        bool is_write;
+        uint32_t changed_reg_addr;
+        int32_t changed_index;
     };
-    std::vector<Snapshot> history_; // 時刻とメモリ状態の履歴
+    std::vector<Snapshot> history_;
 
 public:
-    I2CDevice(std::string device_name, uint8_t i2c_dev_addr, int reg_addr_bytes);
+    // コンストラクタが Config を受け取るように変更
+    explicit I2CDevice(const Config& config);
     
     void CallThisEachI2CAddrByteWrite(bool is_read);
+    void CallThisEachI2CStopCondition();
     void DataByte(uint8_t data, double timestamp);
 
     std::string GetDeviceName() const;
     SnapshotView GetSnapshotViewAt(double timestamp) const;
     std::vector<double> GetAllTimestamp() const;
+    
+    void SetRegisterName(uint32_t reg_addr, const std::string& name);
+    std::string GetRegisterName(uint32_t reg_addr) const;
+    
+    void SetWriteRegisterBitField(uint32_t reg_addr, const BitFieldInfo& bitfield);
+    void SetReadRegisterBitField(uint32_t reg_addr, const BitFieldInfo& bitfield);
+    
+    std::vector<BitFieldInfo> GetWriteRegisterBitField(uint32_t reg_addr) const;
+    std::vector<BitFieldInfo> GetReadRegisterBitField(uint32_t reg_addr) const;
+    
+    int GetRegisterAddressBytes() const { return config_.reg_addr_bytes; }
 
+    const std::map<uint32_t, CommandStat>& GetWriteStats() const { return stats_.write_stats; }
+    const std::map<uint32_t, CommandStat>& GetReadStats() const { return stats_.read_stats; }
 };
 
 class I2CDeviceManager {
 private:
     // アドレスをキーにしてデバイスを保持
-    std::map<uint8_t, std::unique_ptr<I2CDevice>> devices;
+    std::map<uint8_t, std::unique_ptr<I2CDevice>> devices_;
 
 public:
     // デバイスの登録
-    void RegisterDevice(std::string device_name, uint8_t i2c_dev_addr, int reg_addr_bytes) {
-        devices[i2c_dev_addr] = std::make_unique<I2CDevice>(device_name, i2c_dev_addr, reg_addr_bytes);
+    I2CDevice* RegisterDevice(const I2CDevice::Config& config) {
+        uint8_t addr = config.i2c_dev_addr;
+        devices_[addr] = std::make_unique<I2CDevice>(config);
+        return devices_[addr].get();
     }
 
     // 特定のアドレスのデバイスを取得
     I2CDevice* GetDevice(uint8_t i2c_dev_addr) {
-        if (devices.find(i2c_dev_addr) != devices.end()) {
-            return devices[i2c_dev_addr].get();
+        auto it = devices_.find(i2c_dev_addr);
+        if (it != devices_.end()) {
+            return it->second.get();
         }
         return nullptr;
     }
     
-    auto& GetAllDevices() { return devices; }
+    const std::map<uint8_t, std::unique_ptr<I2CDevice>>& GetAllDevices() const { return devices_; }
 };
-

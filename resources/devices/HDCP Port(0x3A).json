@@ -1,0 +1,158 @@
+{
+  "devices": [
+    {
+      "name": "HDCP_Port_Primary",
+      "dev_addr_7bit": "0x3A",
+      "reg_addr_bytes": 1,
+      "auto_addr_inc": false,
+      "support_direct_read_from_default_reg": true,
+      "default_reg_addr": "0x08",
+      "endian": "little",
+      "registers": [
+        {
+          "address": "0x00",
+          "name": "Bksv",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "Bksv[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "Bksv[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "Bksv[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "Bksv[31:24]" },
+            { "byte_offset": 4, "bit_offset": 0, "width": 8, "name": "Bksv[39:32]" }
+          ]
+        },
+        {
+          "address": "0x08",
+          "name": "Ri'",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "Ri'[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "Ri'[15:8]" }
+          ]
+        },
+        {
+          "address": "0x0A",
+          "name": "Pj'",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "Pj'" }
+          ]
+        },
+        {
+          "address": "0x10",
+          "name": "Aksv",
+          "bits_write": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "Aksv[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "Aksv[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "Aksv[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "Aksv[31:24]" },
+            { "byte_offset": 4, "bit_offset": 0, "width": 8, "name": "Aksv[39:32]" }
+          ]
+        },
+        {
+          "address": "0x15",
+          "name": "Ainfo",
+          "bits_write": [
+            { "byte_offset": 0, "bit_offset": 2, "width": 6, "name": "Reserved" },
+            { "byte_offset": 0, "bit_offset": 1, "width": 1, "name": "ENABLE_1_1_FEATURES" },
+            { "byte_offset": 0, "bit_offset": 0, "width": 1, "name": "Reserved" }
+          ]
+        },
+        {
+          "address": "0x18",
+          "name": "An",
+          "bits_write": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "An[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "An[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "An[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "An[31:24]" },
+            { "byte_offset": 4, "bit_offset": 0, "width": 8, "name": "An[39:32]" },
+            { "byte_offset": 5, "bit_offset": 0, "width": 8, "name": "An[47:40]" },
+            { "byte_offset": 6, "bit_offset": 0, "width": 8, "name": "An[55:48]" },
+            { "byte_offset": 7, "bit_offset": 0, "width": 8, "name": "An[63:56]" }
+          ]
+        },
+        {
+          "address": "0x20",
+          "name": "V'_H0",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "V'_H0[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "V'_H0[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "V'_H0[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "V'_H0[31:24]" }
+          ]
+        },
+        {
+          "address": "0x24",
+          "name": "V'_H1",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "V'_H1[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "V'_H1[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "V'_H1[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "V'_H1[31:24]" }
+          ]
+        },
+        {
+          "address": "0x28",
+          "name": "V'_H2",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "V'_H2[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "V'_H2[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "V'_H2[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "V'_H2[31:24]" }
+          ]
+        },
+        {
+          "address": "0x2C",
+          "name": "V'_H3",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "V'_H3[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "V'_H3[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "V'_H3[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "V'_H3[31:24]" }
+          ]
+        },
+        {
+          "address": "0x30",
+          "name": "V'_H4",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "V'_H4[7:0]" },
+            { "byte_offset": 1, "bit_offset": 0, "width": 8, "name": "V'_H4[15:8]" },
+            { "byte_offset": 2, "bit_offset": 0, "width": 8, "name": "V'_H4[23:16]" },
+            { "byte_offset": 3, "bit_offset": 0, "width": 8, "name": "V'_H4[31:24]" }
+          ]
+        },
+        {
+          "address": "0x40",
+          "name": "Bcaps",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 7, "width": 1, "name": "HDMI_RESERVED" },
+            { "byte_offset": 0, "bit_offset": 6, "width": 1, "name": "REPEATER" },
+            { "byte_offset": 0, "bit_offset": 5, "width": 1, "name": "READY" },
+            { "byte_offset": 0, "bit_offset": 4, "width": 1, "name": "FAST" },
+            { "byte_offset": 0, "bit_offset": 2, "width": 2, "name": "Reserved" },
+            { "byte_offset": 0, "bit_offset": 1, "width": 1, "name": "1_1_FEATURES" },
+            { "byte_offset": 0, "bit_offset": 0, "width": 1, "name": "FAST_REAUTHENTICATION" }
+          ]
+        },
+        {
+          "address": "0x41",
+          "name": "Bstatus",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 14, "width": 2, "name": "Reserved" },
+            { "byte_offset": 0, "bit_offset": 13, "width": 1, "name": "HDMI_RESERVED_2" },
+            { "byte_offset": 0, "bit_offset": 12, "width": 1, "name": "HDMI_MODE" },
+            { "byte_offset": 0, "bit_offset": 11, "width": 1, "name": "MAX_CASCADE_EXCEEDED" },
+            { "byte_offset": 0, "bit_offset": 8, "width": 3, "name": "DEPTH" },
+            { "byte_offset": 0, "bit_offset": 7, "width": 1, "name": "MAX_DEVS_EXCEEDED" },
+            { "byte_offset": 0, "bit_offset": 0, "width": 7, "name": "DEVICE_COUNT" }
+          ]
+        },
+        {
+          "address": "0x43",
+          "name": "KSV_FIFO",
+          "bits_read": [
+            { "byte_offset": 0, "bit_offset": 0, "width": 8, "name": "KSV_FIFO" }
+          ]
+        }
+      ]
+    }
+  ]
+}

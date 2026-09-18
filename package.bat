@@ -59,6 +59,10 @@ if exist "%LicensePath%" (
 echo -^> Creating ZIP archive...
 powershell -Command "Compress-Archive -Path '%PackageDir%\*' -DestinationPath '%ZipPath%' -Force" > nul
 
+:: 9. コピー先の実行ファイルをその場所（カレントディレクトリ）で起動
+echo -^> Launching copied executable...
+start "" /d "%PackageDir%" "i2c_memorymap.exe"
+
 echo.
 echo === Packaging Completed ===
 echo Output: %ZipPath%
