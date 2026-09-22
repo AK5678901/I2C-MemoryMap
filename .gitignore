@@ -12,6 +12,7 @@ Makefile
 *.ninja
 build.ninja
 compile_commands.json
+saleae-live/__pycache__/
 
 # --- OS・エディタ関連 ---
 # VS Code

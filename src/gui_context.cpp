@@ -2,6 +2,13 @@
 
 #include <GLFW/glfw3.h>
 
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <windows.h>
+#include "app_icon_resource.h"
+#endif
+
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -16,6 +23,21 @@ GuiContext::GuiContext()
     window_ = glfwCreateWindow(1920, 1080, "I2C_MemoryMap", nullptr, nullptr);
     if (window_ == nullptr)
         return;
+
+#ifdef _WIN32
+    const auto module = GetModuleHandleW(nullptr);
+    const auto large_icon = static_cast<HICON>(LoadImageW(module, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON,
+                                                         GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON),
+                                                         LR_SHARED));
+    const auto small_icon = static_cast<HICON>(LoadImageW(module, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON,
+                                                         GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON),
+                                                         LR_SHARED));
+    const auto hwnd = glfwGetWin32Window(window_);
+    if (large_icon != nullptr)
+        SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(large_icon));
+    if (small_icon != nullptr)
+        SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(small_icon));
+#endif
 
     glfwMakeContextCurrent(window_);
     glfwSwapInterval(1);

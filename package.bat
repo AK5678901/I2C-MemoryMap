@@ -6,6 +6,7 @@ set "AppName=I2C_MemoryMap"
 set "RootDir=%~dp0"
 set "BuildExePath=%RootDir%build\ninja-release\i2c_memorymap.exe"
 set "ResourcesDir=%RootDir%resources"
+set "LiveBridgeDir=%RootDir%saleae-live"
 set "ReadmePath=%RootDir%README.md"
 set "LicensePath=%RootDir%LICENSE"
 set "DistBaseDir=%RootDir%dist"
@@ -37,6 +38,11 @@ if exist "%ResourcesDir%" (
     xcopy /s /e /y "%ResourcesDir%\*" "%PackageDir%\" > nul
 ) else (
     echo [WARNING] Resources folder not found: %ResourcesDir%
+)
+
+if exist "%LiveBridgeDir%" (
+    echo -^> Copying Logic 2 live bridge...
+    xcopy /s /e /y "%LiveBridgeDir%\*" "%PackageDir%\saleae-live\" > nul
 )
 
 :: 6. README.md ‚ÌƒRƒs[

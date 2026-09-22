@@ -6,6 +6,61 @@
 #include <cctype>
 #include <format>
 #include <stdexcept>
+#include <unordered_map>
+
+namespace
+{
+float timeColumnWidth(const TimeValue::DisplayView& display, Timestamp sample_time)
+{
+    const char* example = nullptr;
+    switch (display.format())
+    {
+    case TimeValue::DisplayFormat::IsoUtc: example = "2026-09-22T08:20:18.123456789Z"; break;
+    case TimeValue::DisplayFormat::IsoLocal: example = "2026-09-22T08:20:18.123456789"; break;
+    case TimeValue::DisplayFormat::ShortUtc:
+    case TimeValue::DisplayFormat::ShortLocal: example = "08:20:18.123456789"; break;
+    case TimeValue::DisplayFormat::SinceFirstEvent: example = "6789.123456789"; break;
+    case TimeValue::DisplayFormat::RawCsv: example = "6789.123456789";break;
+    }
+    const auto label = example != nullptr ? std::string(example) : display.formatTimestamp(sample_time);
+    return std::max(ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().CellPadding.x * 2.0F + 12.0F, 65.0F);
+}
+
+void resizeTimeColumnOnFormatChange(const TimeValue::DisplayView& display, Timestamp sample_time)
+{
+    struct PreviousState
+    {
+        TimeValue::DisplayFormat format;
+        int frame;
+    };
+    static std::unordered_map<ImGuiID, PreviousState> previous_states;
+    const ImGuiTable* table = GImGui->CurrentTable;
+    const auto format = display.format();
+    const int frame = ImGui::GetFrameCount();
+    const auto found = previous_states.find(table->ID);
+    const bool continuously_visible = found != previous_states.end() && found->second.frame == frame - 1;
+    const bool format_unchanged = found != previous_states.end() && found->second.format == format;
+    if (continuously_visible && format_unchanged)
+    {
+        found->second.frame = frame;
+        return;
+    }
+    // A new table has no width bounds until its first layout pass. Retry on the next frame.
+    if (table->Columns[0].WidthMax <= 0.0F)
+        return;
+    ImGui::TableSetColumnWidth(0, timeColumnWidth(display, sample_time));
+    previous_states[table->ID] = {format, frame};
+}
+} // namespace
+
+void ViewHelpers::setupTimelineColumns(const TimeValue::DisplayView& display, Timestamp sample_time,
+                                       std::span<const TimelineColumn> other_columns)
+{
+    ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, timeColumnWidth(display, sample_time));
+    for (const auto& column : other_columns)
+        ImGui::TableSetupColumn(column.label, ImGuiTableColumnFlags_WidthFixed, column.width);
+    resizeTimeColumnOnFormatChange(display, sample_time);
+}
 
 namespace
 {

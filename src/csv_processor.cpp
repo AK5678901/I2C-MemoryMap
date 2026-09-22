@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <string>
@@ -59,6 +61,7 @@ LogData importCsvLog(I2CDeviceManager& devicemanager, const std::filesystem::pat
 
     std::string line;
     std::getline(file, line);
+    log.has_csv_timestamps = true;
     I2CDevice* current_device = nullptr;
 
     while (std::getline(file, line))
@@ -70,19 +73,44 @@ LogData importCsvLog(I2CDeviceManager& devicemanager, const std::filesystem::pat
         std::string address_text;
         std::string read_text;
         std::string data_text;
-        double timestamp;
-        double duration;
+        std::string timestamp_text;
+        std::string duration_text;
 
         std::getline(row, name, ',');
         std::getline(row, type, ',');
-        row >> timestamp;
-        row.ignore();
-        row >> duration;
-        row.ignore();
+        std::getline(row, timestamp_text, ',');
+        std::getline(row, duration_text, ',');
         std::getline(row, acknowledgement, ',');
         std::getline(row, address_text, ',');
         std::getline(row, read_text, ',');
         std::getline(row, data_text, ',');
+
+        if (timestamp_text.size() >= 2 && timestamp_text.front() == '"' && timestamp_text.back() == '"')
+            timestamp_text = timestamp_text.substr(1, timestamp_text.size() - 2);
+        auto parsed_timestamp = TimeValue::parse(timestamp_text);
+        if (!parsed_timestamp)
+        {
+            // Legacy Saleae exports use capture-relative seconds, with no absolute origin.
+            try
+            {
+                std::size_t consumed = 0;
+                const auto seconds = std::stod(timestamp_text, &consumed);
+                if (consumed == timestamp_text.size() && std::isfinite(seconds) &&
+                    seconds >= static_cast<double>(std::numeric_limits<Timestamp>::min()) / 1000000000.0 &&
+                    seconds <= static_cast<double>(std::numeric_limits<Timestamp>::max()) / 1000000000.0)
+                {
+                    parsed_timestamp = static_cast<Timestamp>(std::llround(seconds * 1000000000.0));
+                    log.has_absolute_timestamps = false;
+                }
+            }
+            catch (const std::exception&)
+            {
+            }
+        }
+        if (!parsed_timestamp)
+            continue;
+        const Timestamp timestamp = *parsed_timestamp;
+        log.raw_csv_timestamps.try_emplace(timestamp, timestamp_text);
 
         if (type == "\"address\"")
         {
@@ -108,7 +136,7 @@ LogData importCsvLog(I2CDeviceManager& devicemanager, const std::filesystem::pat
         }
     }
 
-    std::set<double> unique_timestamps;
+    std::set<Timestamp> unique_timestamps;
     for (const auto& [address, device] : devicemanager.GetAllDevices())
     {
         for (std::size_t index = 0; index < device->GetHistorySize(); ++index)

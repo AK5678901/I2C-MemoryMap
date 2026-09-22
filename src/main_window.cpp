@@ -12,7 +12,7 @@
 
 namespace
 {
-constexpr float kControlPanelHeight = 100.0F;
+constexpr float kControlPanelHeight = 270.0F;
 
 void setupDockLayout(I2CDeviceManager& devicemanager, const LogData& log, const ImGuiID dockspace_id,
                      const float left_column_width = 0.0F)
@@ -28,16 +28,13 @@ void setupDockLayout(I2CDeviceManager& devicemanager, const LogData& log, const 
     ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
     ImGuiID remaining_id = dockspace_id;
     ImGuiID timeline_id = dockspace_id;
-    if (!valid_addresses.empty())
+    float left_ratio = 0.425F;
+    if (left_column_width > 0.0F)
     {
-        float left_ratio = 0.395F;
-        if (left_column_width > 0.0F)
-        {
-            const float available_width = viewport->WorkSize.x - ImGui::GetStyle().DockingSeparatorSize;
-            left_ratio = std::clamp(left_column_width / std::max(available_width, 1.0F), 0.05F, 0.95F);
-        }
-        ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, left_ratio, &timeline_id, &remaining_id);
+        const float available_width = viewport->WorkSize.x - ImGui::GetStyle().DockingSeparatorSize;
+        left_ratio = std::clamp(left_column_width / std::max(available_width, 1.0F), 0.05F, 0.95F);
     }
+    ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, left_ratio, &timeline_id, &remaining_id);
     ImGuiID controls_id = 0;
     const float control_ratio = std::clamp(kControlPanelHeight / std::max(viewport->WorkSize.y, 1.0F), 0.1F, 0.5F);
     ImGui::DockBuilderSplitNode(timeline_id, ImGuiDir_Down, control_ratio, &controls_id, &timeline_id);
@@ -64,16 +61,32 @@ void setupDockLayout(I2CDeviceManager& devicemanager, const LogData& log, const 
 
 void MainWindow::reset(const LogData& log)
 {
+    control_panel_.resetJumpInput();
+    time_format_ = log.has_absolute_timestamps ? TimeValue::DisplayFormat::ShortLocal
+                                               : TimeValue::DisplayFormat::RawCsv;
     access_timeline_.clear();
     device_visibility_.clear();
     for (const auto address : log.active_addresses)
         device_visibility_[address] = true;
-    target_time_ = log.min_timestamp;
+    target_time_ = log.timestamps.empty() ? 0 : log.min_timestamp;
     first_layout_ = true;
     arrange_devices_ = false;
     scroll_all_devices_timeline_ = false;
     scroll_device_timeline_ = false;
     scroll_timelines_to_target_ = false;
+}
+
+void MainWindow::refreshLive(I2CDeviceManager& devicemanager, const LogData& log)
+{
+    for (const auto address : log.active_addresses)
+        if (!device_visibility_.contains(address))
+        {
+            device_visibility_[address] = true;
+            first_layout_ = true;
+        }
+    target_time_ = log.max_timestamp;
+    TimelineView::rebuild(access_timeline_, devicemanager);
+    scroll_timelines_to_target_ = true;
 }
 
 void MainWindow::handleArrowKeys(const LogData& log)
@@ -125,7 +138,7 @@ void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const L
     ImGui::End();
 }
 
-void MainWindow::render(I2CDeviceManager& devicemanager, const LogData& log)
+void MainWindow::render(I2CDeviceManager& devicemanager, const LogData& log, const LiveReceiver* live_receiver)
 {
     const auto dockspace_id = ImGui::GetID("DeviceDockSpace");
     if (first_layout_)
@@ -150,7 +163,10 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const LogData& log)
 
     ImGui::DockSpaceOverViewport(dockspace_id, ImGui::GetMainViewport());
     handleArrowKeys(log);
-    if (ControlPanel::render(devicemanager, log, target_time_, sync_all_devices_timeline_) &&
+    const auto control_result = control_panel_.render(devicemanager, log, time_format_, target_time_,
+                                                      sync_all_devices_timeline_, live_receiver);
+    const TimeValue::DisplayView time_display(log, time_format_);
+    if (control_result.slider_changed &&
         sync_all_devices_timeline_)
         scroll_timelines_to_target_ = true;
     if (!sync_all_devices_timeline_)
@@ -160,10 +176,10 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const LogData& log)
         scroll_timelines_to_target_ = false;
     }
     renderDeviceList(devicemanager, log);
-    TimelineView::render(access_timeline_, devicemanager, target_time_, sync_all_devices_timeline_,
+    TimelineView::render(access_timeline_, devicemanager, time_display, target_time_, sync_all_devices_timeline_,
                          scroll_all_devices_timeline_, scroll_device_timeline_, scroll_device_address_,
-                         scroll_history_index_, scroll_timelines_to_target_);
-    DeviceWindow::render(devicemanager, device_visibility_, target_time_, sync_all_devices_timeline_,
+                         scroll_history_index_, scroll_timelines_to_target_, control_result.jump_time);
+    DeviceWindow::render(devicemanager, device_visibility_, time_display, target_time_, sync_all_devices_timeline_,
                          scroll_all_devices_timeline_, scroll_device_timeline_, scroll_device_address_,
                          scroll_history_index_, scroll_timelines_to_target_);
     scroll_device_timeline_ = false;

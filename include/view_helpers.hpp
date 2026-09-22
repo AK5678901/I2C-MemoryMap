@@ -7,6 +7,7 @@
 #include <array>
 #include <cfloat>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,8 +42,8 @@ std::string formatTimelineBytes(const std::vector<std::uint8_t>& data);
 
 struct TransactionRow
 {
-    double first_timestamp;
-    double timestamp;
+    Timestamp first_timestamp;
+    Timestamp timestamp;
     std::uint8_t device_address;
     std::size_t first_history_index;
     std::size_t last_history_index;
@@ -59,6 +60,14 @@ std::string formatTransactionRegister(const TransactionRow& row, bool registerle
 void renderTransactionBytesWithTooltips(const TransactionRow& row, const I2CDevice& device);
 
 bool beginFixedLeftWindow(const char* name);
+struct TimelineColumn
+{
+    const char* label;
+    float width;
+};
+
+void setupTimelineColumns(const TimeValue::DisplayView& display, Timestamp sample_time,
+                          std::span<const TimelineColumn> other_columns);
 void renderBytes(const std::vector<std::uint8_t>& data);
 void renderBytesWithTooltips(const std::vector<std::uint8_t>& data,
                              const std::vector<I2CDevice::BitFieldInfo>& fields,

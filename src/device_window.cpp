@@ -17,7 +17,10 @@ namespace
 constexpr float kRegisterColumnWidth = 61.0F;
 constexpr float kDataColumnWidth = 110.0F;
 constexpr float kNameColumnWidth = 110.0F;
-constexpr float kTimeColumnWidth = 77.0F;
+constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"Register", kRegisterColumnWidth},
+                                                             {"Name", kNameColumnWidth},
+                                                             {"Write Data", kDataColumnWidth},
+                                                             {"Read Data", kDataColumnWidth}};
 
 void setupDataColumns(const bool registerless)
 {
@@ -73,7 +76,8 @@ void renderRegisterRows(const I2CDevice& device, const I2CDevice::SnapshotView& 
     }
 }
 
-std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device, double& target_time,
+std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
+                                                     const TimeValue::DisplayView& display, Timestamp& target_time,
                                                      std::optional<std::size_t> requested_index,
                                                      const bool scroll_to_selected,
                                                      ViewHelpers::TimelineFilters<5>& filters)
@@ -84,8 +88,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device, do
     ImGui::Text("Transactions: %zu", rows.size());
     if (!ImGui::BeginTable("TransactionTimeline", 5, ViewHelpers::table_flags))
         return std::nullopt;
-    ImGui::TableSetupColumn("Time (s)", ImGuiTableColumnFlags_WidthFixed, kTimeColumnWidth);
-    setupDataColumns(false);
+    ViewHelpers::setupTimelineColumns(display, rows.empty() ? target_time : rows.front().timestamp, kTimelineColumns);
     ImGui::TableSetupScrollFreeze(0, 2);
     ImGui::TableHeadersRow();
     const bool filter_changed = ViewHelpers::renderTimelineFilterRow(filters);
@@ -101,7 +104,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device, do
         const auto matches = [&](std::size_t column, const std::string& value) {
             return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
         };
-        if ((!filters[0][0] || matches(0, std::format("{:.6f}", row.timestamp))) &&
+        if ((!filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
             (!filters[1][0] || matches(1, register_label)) &&
             (!filters[2][0] || matches(2, name)) &&
             (!filters[3][0] || matches(3, row.is_write ? ViewHelpers::formatTimelineBytes(row.bytes) : "")) &&
@@ -109,7 +112,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device, do
             visible_rows.push_back(index);
     }
     const auto position = std::upper_bound(visible_rows.begin(), visible_rows.end(), target_time,
-                                           [&](double time, std::size_t index) {
+                                           [&](Timestamp time, std::size_t index) {
                                                return time < rows[index].first_timestamp;
                                            });
     const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
@@ -155,7 +158,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device, do
             ImGui::PushID(index);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            const auto label = std::format("{:.6f}", row.timestamp);
+            const auto label = display.formatTimestamp(row.timestamp);
             if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
             {
                 target_time = row.timestamp;
@@ -178,7 +181,8 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device, do
     return selected_index;
 }
 
-std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device, double& target_time,
+std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
+                                                  const TimeValue::DisplayView& display, Timestamp& target_time,
                                                   std::optional<std::size_t> scroll_index,
                                                   const bool scroll_to_selected,
                                                   ViewHelpers::TimelineFilters<5>& filters)
@@ -186,8 +190,9 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device, doubl
     ImGui::Text("Databytes: %zu", device.GetHistorySize());
     if (!ImGui::BeginTable("RegisterTimeline", 5, ViewHelpers::table_flags))
         return std::nullopt;
-    ImGui::TableSetupColumn("Time (s)", ImGuiTableColumnFlags_WidthFixed, kTimeColumnWidth);
-    setupDataColumns(false);
+    ViewHelpers::setupTimelineColumns(display,
+                                      device.GetHistorySize() == 0 ? target_time : device.GetHistoryEntry(0).timestamp,
+                                      kTimelineColumns);
     ImGui::TableSetupScrollFreeze(0, 2);
     ImGui::TableHeadersRow();
     const bool filter_changed = ViewHelpers::renderTimelineFilterRow(filters);
@@ -208,7 +213,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device, doubl
             const auto matches = [&](std::size_t column, const std::string& value) {
                 return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
             };
-            if ((!filters[0][0] || matches(0, std::format("{:.6f}", entry.timestamp))) &&
+            if ((!filters[0][0] || matches(0, display.formatTimestamp(entry.timestamp))) &&
                 (!filters[1][0] || matches(1, device.GetRegisterAddressBytes() == 0
                                                ? "-" : std::format("0x{:04X}", entry.register_address))) &&
                 (!filters[2][0] || matches(2, device.GetRegisterName(entry.register_address))) &&
@@ -220,7 +225,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device, doubl
         }
     }
     const auto position = std::upper_bound(visible_rows.begin(), visible_rows.end(), target_time,
-                                           [&](double time, std::size_t index) {
+                                           [&](Timestamp time, std::size_t index) {
                                                return time < device.GetHistoryEntry(index).timestamp;
                                            });
     const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
@@ -260,7 +265,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device, doubl
             ImGui::PushID(index);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            const auto time_label = std::format("{:.6f}", entry.timestamp);
+            const auto time_label = display.formatTimestamp(entry.timestamp);
             if (ImGui::Selectable(time_label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
             {
                 target_time = entry.timestamp;
@@ -288,7 +293,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device, doubl
 }
 
 void renderAccessStatRows(const std::map<std::uint32_t, I2CDevice::CommandStat>& stats, const char* direction,
-                          const bool registerless, const double target_time)
+                          const bool registerless, const Timestamp target_time)
 {
     for (const auto& [address, stat] : stats)
     {
@@ -319,7 +324,7 @@ void renderAccessStatRows(const std::map<std::uint32_t, I2CDevice::CommandStat>&
     }
 }
 
-void renderAccessStatistics(const I2CDevice& device, const double target_time)
+void renderAccessStatistics(const I2CDevice& device, const Timestamp target_time)
 {
     if (!ImGui::CollapsingHeader("Access intervals", ImGuiTreeNodeFlags_DefaultOpen))
         return;
@@ -364,7 +369,8 @@ std::string DeviceWindow::name(const I2CDevice& device, const std::uint8_t addre
 }
 
 void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t, bool>& visibility,
-                          double& target_time, const bool sync_timeline_positions,
+                          const TimeValue::DisplayView& display, Timestamp& target_time,
+                          const bool sync_timeline_positions,
                           bool& scroll_all_devices_timeline, bool& scroll_device_timeline,
                           std::uint8_t& scroll_device_address, std::size_t& scroll_history_index,
                           const bool scroll_timelines_to_target)
@@ -434,9 +440,9 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                                                  : std::nullopt;
                 if (const auto clicked_index =
                         grouped
-                            ? renderTransactionTimeline(*device, target_time, requested_index,
+                            ? renderTransactionTimeline(*device, display, target_time, requested_index,
                                                         scroll_timelines_to_target, timeline_filters[address])
-                            : renderRegisterTimeline(*device, target_time, requested_index,
+                            : renderRegisterTimeline(*device, display, target_time, requested_index,
                                                      scroll_timelines_to_target, timeline_filters[address]);
                     sync_timeline_positions && clicked_index.has_value())
                 {

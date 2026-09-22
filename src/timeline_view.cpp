@@ -16,25 +16,13 @@ namespace
 {
 std::vector<ViewHelpers::TransactionRow> grouped_timeline;
 
-struct TimelineColumn
-{
-    const char* label;
-    float width;
-};
-
-constexpr TimelineColumn kTimelineColumns[] = {{"Time (s)", 77.0F},    {"I2C Address", 80.0F},
-                                                {"Device", 119.0F},     {"Register", 61.0F},
-                                                {"Name", 110.0F},       {"Write Data", 110.0F},
-                                                {"Read Data", 110.0F}};
-
-void setupTimelineColumns()
-{
-    for (const auto& column : kTimelineColumns)
-        ImGui::TableSetupColumn(column.label, ImGuiTableColumnFlags_WidthFixed, column.width);
-}
+constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"I2C Address", 80.0F}, {"Device", 119.0F},
+                                                             {"Register", 61.0F},    {"Name", 110.0F},
+                                                             {"Write Data", 110.0F}, {"Read Data", 110.0F}};
 
 void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2CDeviceManager& devicemanager,
-                        double& target_time, const bool sync_timeline_positions, bool& scroll_all_devices_timeline,
+                        const TimeValue::DisplayView& display, Timestamp& target_time,
+                        const bool sync_timeline_positions, bool& scroll_all_devices_timeline,
                         bool& scroll_device_timeline, std::uint8_t& scroll_device_address,
                         std::size_t& scroll_history_index, const bool scroll_timelines_to_target,
                         ViewHelpers::TimelineFilters<7>& filters)
@@ -42,7 +30,8 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
     ImGui::Text("Transactions: %zu", rows.size());
     if (!ImGui::BeginTable("AllTransactions", 7, ViewHelpers::table_flags))
         return;
-    setupTimelineColumns();
+    const auto sample_time = rows.empty() ? target_time : rows.front().timestamp;
+    ViewHelpers::setupTimelineColumns(display, sample_time, kTimelineColumns);
     ImGui::TableSetupScrollFreeze(0, 2);
     ImGui::TableHeadersRow();
     const bool filter_changed = ViewHelpers::renderTimelineFilterRow(filters);
@@ -59,7 +48,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
         const auto matches = [&](std::size_t column, const std::string& value) {
             return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
         };
-        if ((!filters[0][0] || matches(0, std::format("{:.6f}", row.timestamp))) &&
+        if ((!filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
             (!filters[1][0] || matches(1, std::format("0x{:02X}", row.device_address))) &&
             (!filters[2][0] || matches(2, device->GetDeviceName())) &&
             (!filters[3][0] || matches(3, register_label)) &&
@@ -69,7 +58,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             visible_rows.push_back(index);
     }
     const auto position = std::upper_bound(visible_rows.begin(), visible_rows.end(), target_time,
-                                           [&](double time, std::size_t index) {
+                                           [&](Timestamp time, std::size_t index) {
                                                return time < rows[index].first_timestamp;
                                            });
     const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
@@ -121,7 +110,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             ImGui::PushID(index);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            const auto label = std::format("{:.6f}", row.timestamp);
+            const auto label = display.formatTimestamp(row.timestamp);
             if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
             {
                 target_time = row.timestamp;
@@ -171,40 +160,29 @@ void TimelineView::rebuild(AccessTimeline& timeline, const I2CDeviceManager& dev
     }
 }
 
-void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemanager, double& target_time,
+void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemanager,
+                          const TimeValue::DisplayView& display, Timestamp& target_time,
                           const bool sync_timeline_positions, bool& scroll_all_devices_timeline,
                           bool& scroll_device_timeline, std::uint8_t& scroll_device_address,
-                          std::size_t& scroll_history_index, const bool scroll_timelines_to_target)
+                          std::size_t& scroll_history_index, const bool scroll_timelines_to_target,
+                          std::optional<Timestamp> jump_time)
 {
     static ViewHelpers::TimelineFilters<7> filters{};
     static bool group_transactions = false;
-    static double requested_time = 0.0;
-    static bool requested_time_initialized = false;
     if (!ViewHelpers::beginFixedLeftWindow("All Devices - Timeline"))
     {
         ImGui::End();
         return;
     }
-    if (!requested_time_initialized)
-    {
-        requested_time = target_time;
-        requested_time_initialized = true;
-    }
-    ImGui::SetNextItemWidth(140.0F);
-    const bool time_submitted = ImGui::InputDouble("Time (s)##JumpTime", &requested_time, 0.0, 0.0, "%.6f",
-                                                    ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::SameLine();
-    const bool button_clicked = ImGui::Button("Go to nearest transaction");
-    const bool jump_requested = time_submitted || button_clicked;
     bool jump_to_target = false;
-    if (jump_requested && std::isfinite(requested_time) && !grouped_timeline.empty())
+    if (jump_time && !grouped_timeline.empty())
     {
-        const auto next = std::lower_bound(grouped_timeline.begin(), grouped_timeline.end(), requested_time,
-                                           [](const auto& row, double time) { return row.timestamp < time; });
+        const auto next = std::lower_bound(grouped_timeline.begin(), grouped_timeline.end(), *jump_time,
+                                           [](const auto& row, Timestamp time) { return row.timestamp < time; });
         auto nearest = next;
         if (next == grouped_timeline.end() ||
             (next != grouped_timeline.begin() &&
-             requested_time - std::prev(next)->timestamp <= next->timestamp - requested_time))
+            *jump_time - std::prev(next)->timestamp <= next->timestamp - *jump_time))
             nearest = std::prev(next);
         target_time = nearest->timestamp;
         scroll_all_devices_timeline = true;
@@ -222,7 +200,7 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
                            : "All devices, oldest first. One row per data-byte update.\nClick a row or use Up/Down to select its time.");
     if (group_transactions)
     {
-        renderTransactions(grouped_timeline, devicemanager, target_time, sync_timeline_positions,
+        renderTransactions(grouped_timeline, devicemanager, display, target_time, sync_timeline_positions,
                            scroll_all_devices_timeline, scroll_device_timeline, scroll_device_address,
                            scroll_history_index, scroll_timelines_to_target || jump_to_target, filters);
         ImGui::End();
@@ -231,7 +209,8 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
     ImGui::Text("Databytes: %zu", timeline.size());
     if (ImGui::BeginTable("AllAccesses", 7, ViewHelpers::table_flags))
     {
-        setupTimelineColumns();
+        const auto sample_time = timeline.empty() ? target_time : timeline.front().timestamp;
+        ViewHelpers::setupTimelineColumns(display, sample_time, kTimelineColumns);
         ImGui::TableSetupScrollFreeze(0, 2);
         ImGui::TableHeadersRow();
         const bool filter_changed = ViewHelpers::renderTimelineFilterRow(filters);
@@ -253,7 +232,7 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
                 const auto matches = [&](std::size_t column, const std::string& value) {
                     return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
                 };
-                if ((!filters[0][0] || matches(0, std::format("{:.6f}", row.timestamp))) &&
+                if ((!filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
                     (!filters[1][0] || matches(1, std::format("0x{:02X}", row.device_address))) &&
                     (!filters[2][0] || matches(2, device->GetDeviceName())) &&
                     (!filters[3][0] || matches(3, device->GetRegisterAddressBytes() == 0
@@ -267,7 +246,7 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
             }
         }
         const auto position = std::upper_bound(visible_rows.begin(), visible_rows.end(), target_time,
-                                               [&](double time, std::size_t index) {
+                                               [&](Timestamp time, std::size_t index) {
                                                    return time < timeline[index].timestamp;
                                                });
         const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
@@ -319,7 +298,7 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
                 ImGui::PushID(index);
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                const auto label = std::format("{:.6f}", row.timestamp);
+                const auto label = display.formatTimestamp(row.timestamp);
                 if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
                 {
                     target_time = row.timestamp;

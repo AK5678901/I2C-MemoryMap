@@ -5,12 +5,13 @@
 #include <format>
 #include <set>
 #include <string>
+#include <utility>
 
-void I2CDevice::CommandStat::RecordAccess(double timestamp)
+void I2CDevice::CommandStat::RecordAccess(Timestamp timestamp)
 {
     if (call_count > 0)
     {
-        const double interval = timestamp - last_timestamp;
+        const double interval = TimeValue::durationSeconds(timestamp - last_timestamp);
         intervals.push_back(interval);
         min_interval = std::min(min_interval, interval);
         max_interval = std::max(max_interval, interval);
@@ -24,7 +25,7 @@ void I2CDevice::CommandStat::RecordAccess(double timestamp)
     access_timestamps.push_back(timestamp);
 }
 
-std::optional<double> I2CDevice::CommandStat::GetIntervalAt(double timestamp) const
+std::optional<double> I2CDevice::CommandStat::GetIntervalAt(Timestamp timestamp) const
 {
     const auto position = std::upper_bound(access_timestamps.begin(), access_timestamps.end(), timestamp);
     const auto count = static_cast<std::size_t>(std::distance(access_timestamps.begin(), position));
@@ -107,8 +108,30 @@ void I2CDevice::CallThisEachI2CStopCondition()
     state_.bus_condition = I2CBusCondition::STOP;
 }
 
+void I2CDevice::ResetRuntime()
+{
+    state_ = State{};
+    history_.clear();
+    history_.shrink_to_fit();
+    for (auto& [address, info] : registers_)
+    {
+        std::vector<std::uint8_t>{}.swap(info.data_w);
+        std::vector<std::uint8_t>{}.swap(info.data_r);
+        std::vector<bool>{}.swap(info.byte_has_written);
+        std::vector<bool>{}.swap(info.byte_has_read);
+    }
+    auto names = std::move(stats_.command_names);
+    stats_ = Statistics{};
+    stats_.command_names = std::move(names);
+    for (const auto& [address, name] : stats_.command_names)
+    {
+        stats_.write_stats[address].command_name = name;
+        stats_.read_stats[address].command_name = name;
+    }
+}
+
 // Write時の処理 アドレス構築と、Write用のレジスタマップを更新
-void I2CDevice::DataByte(uint8_t data, double timestamp)
+void I2CDevice::DataByte(uint8_t data, Timestamp timestamp)
 {
 
     // アドレス幅が0（レジスタレス）の場合の処理。ライト、リード兼用
@@ -235,7 +258,7 @@ const std::string& I2CDevice::GetDeviceName() const noexcept
 }
 
 // 指定時刻以下の最新のスナップショットを取得
-I2CDevice::SnapshotView I2CDevice::GetSnapshotViewAt(double timestamp) const
+I2CDevice::SnapshotView I2CDevice::GetSnapshotViewAt(Timestamp timestamp) const
 {
     static const std::map<uint32_t, RegisterInfo> empty_registers;
 
@@ -245,7 +268,7 @@ I2CDevice::SnapshotView I2CDevice::GetSnapshotViewAt(double timestamp) const
 
     // 指定時刻「以下」の要素のうち、最も右側（時刻が一番大きいもの＝直近のもの）を探す
     auto it = std::upper_bound(history_.begin(), history_.end(), timestamp,
-                               [](double t, const Snapshot& s) { return t < s.timestamp; });
+                               [](Timestamp t, const Snapshot& s) { return t < s.timestamp; });
 
     // もし指定時刻が「最初の履歴の時刻」よりも前なら、初期状態（まっさらな状態）を返す
     if (it == history_.begin())

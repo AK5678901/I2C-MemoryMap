@@ -1,4 +1,5 @@
 #pragma once
+#include "time_value.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -25,15 +26,15 @@ class I2CDevice
         uint32_t call_count = 0;
         double min_interval = std::numeric_limits<double>::max();
         double max_interval = 0.0;
-        double last_timestamp = -1.0;
+        Timestamp last_timestamp = 0;
         std::vector<double> intervals;
-        std::vector<double> access_timestamps;
+        std::vector<Timestamp> access_timestamps;
         double mean_interval = 0.0;
         double interval_m2 = 0.0;
 
-        void RecordAccess(double timestamp);
+        void RecordAccess(Timestamp timestamp);
         double GetIntervalStdDev() const;
-        std::optional<double> GetIntervalAt(double timestamp) const;
+        std::optional<double> GetIntervalAt(Timestamp timestamp) const;
     };
 
     // i2c_device.hpp の RegisterInfo 内に追加するイメージ
@@ -68,7 +69,7 @@ class I2CDevice
 
     struct HistoryEntryView
     {
-        double timestamp;
+        Timestamp timestamp;
         bool is_write;
         uint32_t register_address;
         const RegisterInfo& register_info;
@@ -119,7 +120,7 @@ class I2CDevice
 
     struct Snapshot
     {
-        double timestamp;
+        Timestamp timestamp;
         std::map<uint32_t, RegisterInfo> registers;
         bool is_write;
         uint32_t changed_reg_addr;
@@ -134,10 +135,11 @@ class I2CDevice
 
     void CallThisEachI2CAddrByteWrite(bool is_read);
     void CallThisEachI2CStopCondition();
-    void DataByte(uint8_t data, double timestamp);
+    void ResetRuntime();
+    void DataByte(uint8_t data, Timestamp timestamp);
 
     const std::string& GetDeviceName() const noexcept;
-    SnapshotView GetSnapshotViewAt(double timestamp) const;
+    SnapshotView GetSnapshotViewAt(Timestamp timestamp) const;
     std::size_t GetHistorySize() const
     {
         return history_.size();

@@ -21,7 +21,9 @@ set(SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/gui_context.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/i2c_device.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main_window.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/live_receiver.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/timeline_view.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/time_value.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/view_helpers.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/windows_helpers.cpp"
     
@@ -56,7 +58,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE glfw)
 
 # OpenGLライブラリのリンク (Windows/Linux環境で一般的な処理)
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME} PRIVATE opengl32)
+    target_sources(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/assets/app_icon.rc")
+    target_link_libraries(${PROJECT_NAME} PRIVATE opengl32 ws2_32)
     # MSVC環境（Windows）のとき、コンソール画面を非表示にする
     if(MSVC)
         target_link_options(${PROJECT_NAME} PRIVATE /SUBSYSTEM:WINDOWS)
@@ -70,6 +73,7 @@ if(BUILD_TESTING)
         add_executable(${test_name}
             "${CMAKE_CURRENT_SOURCE_DIR}/${test_source}"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/i2c_device.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/time_value.cpp"
         )
         target_include_directories(${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
         add_test(NAME ${test_name} COMMAND ${test_name})
@@ -77,4 +81,10 @@ if(BUILD_TESTING)
 
     add_i2c_memorymap_test(register_history_test tests/register_history_test.cpp)
     add_i2c_memorymap_test(access_statistics_test tests/access_statistics_test.cpp)
+    add_executable(time_value_test tests/time_value_test.cpp src/time_value.cpp)
+    target_include_directories(time_value_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    add_test(NAME time_value_test COMMAND time_value_test)
+    add_executable(csv_iso_test tests/csv_iso_test.cpp src/csv_processor.cpp src/i2c_device.cpp src/time_value.cpp)
+    target_include_directories(csv_iso_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    add_test(NAME csv_iso_test COMMAND csv_iso_test)
 endif()

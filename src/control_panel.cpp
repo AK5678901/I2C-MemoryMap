@@ -1,14 +1,17 @@
 #include "control_panel.hpp"
 
+#include "live_receiver.hpp"
+
 #include "view_helpers.hpp"
 
 #include "imgui.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace
 {
-void moveToPreviousTimestamp(const LogData& log, double& target_time)
+void moveToPreviousTimestamp(const LogData& log, Timestamp& target_time)
 {
     if (log.timestamps.empty())
         return;
@@ -17,7 +20,7 @@ void moveToPreviousTimestamp(const LogData& log, double& target_time)
     target_time = index > 0 ? log.timestamps[index - 1] : log.timestamps.front();
 }
 
-void moveToNextTimestamp(const LogData& log, double& target_time)
+void moveToNextTimestamp(const LogData& log, Timestamp& target_time)
 {
     if (log.timestamps.empty())
         return;
@@ -26,27 +29,85 @@ void moveToNextTimestamp(const LogData& log, double& target_time)
 }
 } // namespace
 
-bool ControlPanel::render(const I2CDeviceManager& devicemanager, const LogData& log, double& target_time,
-                          bool& sync_timeline_positions)
+void ControlPanel::State::resetJumpInput()
 {
+    jump_text_.fill('\0');
+    jump_initialized_ = false;
+    previous_format_.reset();
+}
+
+ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager& devicemanager, const LogData& log,
+                                                 TimeValue::DisplayFormat& format, Timestamp& target_time,
+                                                 bool& sync_timeline_positions,
+                                                 const LiveReceiver* live_receiver)
+{
+    Result result;
     if (!ViewHelpers::beginFixedLeftWindow("Control Panel"))
     {
         ImGui::End();
-        return false;
+        return result;
     }
     ImGui::Text("Active Devices: %zu", devicemanager.GetAllDevices().size());
+    if (live_receiver != nullptr)
+    {
+        if (live_receiver->hasSequence())
+            ImGui::Text("Live UDP frames: %llu received, %llu missing",
+                        static_cast<unsigned long long>(live_receiver->receivedFrames()),
+                        static_cast<unsigned long long>(live_receiver->missingFrames()));
+        else
+            ImGui::TextDisabled("Live UDP: waiting for sequenced frames");
+        ImGui::Text("Receive queue: %zu / %zu frames", live_receiver->queuedFrames(),
+                    LiveReceiver::max_queued_frames);
+        const auto dropped = live_receiver->droppedQueuedFrames();
+        if (dropped > 0)
+            ImGui::TextColored(ImVec4(1.0F, 0.25F, 0.25F, 1.0F),
+                               "WARNING: RECEIVE QUEUE OVERFLOW - %llu FRAMES LOST",
+                               static_cast<unsigned long long>(dropped));
+        else
+            ImGui::TextDisabled("Receive queue drops: 0");
+        ImGui::TextDisabled("OS receive buffer capacity: %d bytes", live_receiver->socketBufferBytes());
+    }
     ImGui::Separator();
     if (ImGui::Button("<< Prev"))
         moveToPreviousTimestamp(log, target_time);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0F);
-    const bool slider_changed =
-        ImGui::SliderScalar("##TimeSlider", ImGuiDataType_Double, &target_time, &log.min_timestamp,
-                            &log.max_timestamp, "Time: %.6f s");
+    const Timestamp minimum = log.timestamps.empty() ? 0 : log.min_timestamp;
+    const Timestamp maximum = log.timestamps.empty() ? 0 : log.max_timestamp;
+    result.slider_changed = ImGui::SliderScalar("##TimeSlider", ImGuiDataType_S64, &target_time,
+                                                &minimum, &maximum, "");
     ImGui::SameLine();
     if (ImGui::Button("Next >>"))
         moveToNextTimestamp(log, target_time);
+    int selected_format = static_cast<int>(format);
+    ImGui::SetNextItemWidth(190.0F);
+    const char* formats = log.has_csv_timestamps
+                              ? "UTC ISO 8601\0Local ISO 8601\0UTC short\0Local short\0Since first event\0CSV original\0"
+                              : "UTC ISO 8601\0Local ISO 8601\0UTC short\0Local short\0Since first event\0";
+    if (ImGui::Combo("Time display", &selected_format, formats))
+        format = static_cast<TimeValue::DisplayFormat>(selected_format);
+    const TimeValue::DisplayView display(log, format);
+    ImGui::TextWrapped("Selected: %s", display.formatTimestamp(target_time).c_str());
+    const bool format_changed = previous_format_ && *previous_format_ != format;
+    if (!log.timestamps.empty() && (!jump_initialized_ || format_changed))
+    {
+        const auto value = display.formatTimestamp(log.timestamps.front());
+        jump_text_.fill('\0');
+        std::memcpy(jump_text_.data(), value.data(), std::min(value.size(), jump_text_.size() - 1));
+        jump_initialized_ = true;
+    }
+    previous_format_ = format;
+    ImGui::SetNextItemWidth(265.0F);
+    const bool submitted = ImGui::InputText("Time##JumpTime", jump_text_.data(), jump_text_.size(),
+                                            ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    const bool clicked = ImGui::Button("Go to nearest transaction");
+    if (submitted || clicked)
+        result.jump_time = display.parseDisplayed(jump_text_.data(),
+                                                    log.timestamps.empty() ? target_time : log.timestamps.front());
+    if ((submitted || clicked) && !result.jump_time)
+        ImGui::TextColored(ImVec4(1.0F, 0.25F, 0.25F, 1.0F), "Invalid time for selected format");
     ImGui::Checkbox("Sync timeline view positions across windows", &sync_timeline_positions);
     ImGui::End();
-    return slider_changed;
+    return result;
 }

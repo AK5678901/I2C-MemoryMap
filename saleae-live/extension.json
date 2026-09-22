@@ -1,0 +1,13 @@
+{
+  "name": "I2C MemoryMap Live Bridge",
+  "apiVersion": "1.0.0",
+  "author": "I2C MemoryMap",
+  "description": "Streams I2C frames to I2C MemoryMap on localhost",
+  "version": "1.0.0",
+  "extensions": {
+    "I2C MemoryMap Live Bridge": {
+      "type": "HighLevelAnalyzer",
+      "entryPoint": "HighLevelAnalyzer.Hla"
+    }
+  }
+}

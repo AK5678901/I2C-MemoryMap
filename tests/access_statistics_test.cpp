@@ -15,32 +15,34 @@ void checkNear(double actual, double expected)
     check(std::abs(actual - expected) < 1e-10);
 }
 
+Timestamp seconds(double value) { return static_cast<Timestamp>(std::llround(value * 1000000000.0)); }
+
 int main()
 {
     I2CDevice::CommandStat stat;
-    check(!stat.GetIntervalAt(100));
-    stat.RecordAccess(1);
+    check(!stat.GetIntervalAt(seconds(100)));
+    stat.RecordAccess(seconds(1));
     check(stat.intervals.empty());
-    check(!stat.GetIntervalAt(1));
-    stat.RecordAccess(3);
+    check(!stat.GetIntervalAt(seconds(1)));
+    stat.RecordAccess(seconds(3));
     checkNear(stat.GetIntervalStdDev(), 0);
-    stat.RecordAccess(7);
+    stat.RecordAccess(seconds(7));
     checkNear(stat.mean_interval, 3);
     checkNear(stat.min_interval, 2);
     checkNear(stat.max_interval, 4);
     checkNear(stat.GetIntervalStdDev(), 1);
-    check(!stat.GetIntervalAt(0));
-    check(!stat.GetIntervalAt(2.99));
-    checkNear(stat.GetIntervalAt(3).value(), 2);
-    checkNear(stat.GetIntervalAt(6).value(), 2);
-    checkNear(stat.GetIntervalAt(7).value(), 4);
-    checkNear(stat.GetIntervalAt(100).value(), 4);
-    checkNear(stat.GetIntervalAt(3).value(), 2); // Scrubbing backwards must not retain a future value.
+    check(!stat.GetIntervalAt(seconds(0)));
+    check(!stat.GetIntervalAt(seconds(2.99)));
+    checkNear(stat.GetIntervalAt(seconds(3)).value(), 2);
+    checkNear(stat.GetIntervalAt(seconds(6)).value(), 2);
+    checkNear(stat.GetIntervalAt(seconds(7)).value(), 4);
+    checkNear(stat.GetIntervalAt(seconds(100)).value(), 4);
+    checkNear(stat.GetIntervalAt(seconds(3)).value(), 2); // Scrubbing backwards must not retain a future value.
 
     I2CDevice::CommandStat equal_times;
-    equal_times.RecordAccess(0);
-    equal_times.RecordAccess(0);
-    checkNear(equal_times.GetIntervalAt(0).value(), 0);
+    equal_times.RecordAccess(seconds(0));
+    equal_times.RecordAccess(seconds(0));
+    checkNear(equal_times.GetIntervalAt(seconds(0)).value(), 0);
     checkNear(equal_times.GetIntervalStdDev(), 0);
 
     for (int address_bytes : {0, 1})
@@ -56,16 +58,16 @@ int main()
         {
             device.CallThisEachI2CAddrByteWrite(false);
             if (address_bytes > 0)
-                device.DataByte(0, time - 0.1);
-            device.DataByte(0x12, time);
-            device.DataByte(0x34, time + 0.01);
+                device.DataByte(0, seconds(time - 0.1));
+            device.DataByte(0x12, seconds(time));
+            device.DataByte(0x34, seconds(time + 0.01));
             device.CallThisEachI2CStopCondition();
         }
         for (double time : {10.0, 15.0})
         {
             device.CallThisEachI2CAddrByteWrite(true);
-            device.DataByte(0x56, time);
-            device.DataByte(0x78, time + 0.01);
+            device.DataByte(0x56, seconds(time));
+            device.DataByte(0x78, seconds(time + 0.01));
             device.CallThisEachI2CStopCondition();
         }
         const auto& writes = device.GetWriteStats().at(0);
@@ -75,8 +77,8 @@ int main()
         checkNear(writes.mean_interval, 3);
         checkNear(writes.GetIntervalStdDev(), 1);
         checkNear(reads.mean_interval, 5);
-        checkNear(reads.GetIntervalAt(15).value(), 5);
-        check(!reads.GetIntervalAt(14));
+        checkNear(reads.GetIntervalAt(seconds(15)).value(), 5);
+        check(!reads.GetIntervalAt(seconds(14)));
     }
     std::cout << "Access statistics checks passed.\n";
 }
