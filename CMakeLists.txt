@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(i2c_memorymap VERSION 1.0.0 LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -11,7 +13,17 @@ set(IMGUI_CLUB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/submodule/imgui_club")
 # ソースファイルを明示的に定義
 set(SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/application.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/control_panel.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/csv_processor.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/device_config_loader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/device_window.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/gui_context.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/i2c_device.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/main_window.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/timeline_view.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/view_helpers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/windows_helpers.cpp"
     
     # ImGui コアソース
     "${IMGUI_DIR}/imgui.cpp"
@@ -51,4 +63,18 @@ if(WIN32)
     endif()
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE GL)
+endif()
+
+if(BUILD_TESTING)
+    function(add_i2c_memorymap_test test_name test_source)
+        add_executable(${test_name}
+            "${CMAKE_CURRENT_SOURCE_DIR}/${test_source}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/i2c_device.cpp"
+        )
+        target_include_directories(${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        add_test(NAME ${test_name} COMMAND ${test_name})
+    endfunction()
+
+    add_i2c_memorymap_test(register_history_test tests/register_history_test.cpp)
+    add_i2c_memorymap_test(access_statistics_test tests/access_statistics_test.cpp)
 endif()

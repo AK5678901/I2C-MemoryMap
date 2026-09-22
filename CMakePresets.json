@@ -13,7 +13,8 @@
                 "CMAKE_C_COMPILER": "cl.exe"
             },
             "environment": {
-                "CL": "/utf-8 /EHsc"
+                "CL": "/utf-8 /EHsc",
+                "VSLANG": "1033"
             },
             "vendor": {
                 "microsoft.com/VisualStudioSettings/CMake/1.0": {
@@ -34,7 +35,8 @@
                 "CMAKE_C_COMPILER": "cl.exe"
             },
             "environment": {
-                "CL": "/utf-8 /EHsc"
+                "CL": "/utf-8 /EHsc",
+                "VSLANG": "1033"
             },
             "vendor": {
                 "microsoft.com/VisualStudioSettings/CMake/1.0": {
@@ -52,6 +54,22 @@
         {
             "name": "ninja-release-build",
             "configurePreset": "ninja-release"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "ninja-debug-test",
+            "configurePreset": "ninja-debug",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "ninja-release-test",
+            "configurePreset": "ninja-release",
+            "output": {
+                "outputOnFailure": true
+            }
         }
     ]
 }

@@ -1,6 +1,7 @@
 [submodule "submodule/imgui"]
 	path = submodule/imgui
 	url = https://github.com/ocornut/imgui.git
+	branch = docking
 [submodule "submodule/glfw"]
 	path = submodule/glfw
 	url = https://github.com/glfw/glfw.git
