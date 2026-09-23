@@ -12,7 +12,7 @@
 
 namespace
 {
-constexpr float kControlPanelHeight = 270.0F;
+constexpr float kControlPanelHeight = 360.0F;
 
 void setupDockLayout(I2CDeviceManager& devicemanager, const LogData& log, const ImGuiID dockspace_id,
                      const float left_column_width = 0.0F)
@@ -106,7 +106,7 @@ void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const L
 {
     if (ViewHelpers::beginFixedLeftWindow("Devices"))
     {
-        ImGui::TextUnformatted("Show device windows");
+        ImGui::Text("Devices loaded from JSON: %zu", devicemanager.GetAllDevices().size());
         const bool any_visible = std::ranges::any_of(log.active_addresses, [&](std::uint8_t address) {
             return device_visibility_[address] && devicemanager.GetAllDevices().contains(address);
         });
