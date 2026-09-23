@@ -64,39 +64,36 @@ void MainWindow::reset(const I2CEventProcessor::Info& info)
     control_panel_.resetJumpInput();
     time_format_ = info.has_absolute_timestamps ? TimeValue::DisplayFormat::ShortLocal
                                                : TimeValue::DisplayFormat::RawCsv;
-    access_timeline_.clear();
-    device_visibility_.clear();
+    timeline_view_ = {};
+    device_window_states_.clear();
     for (const auto address : info.active_addresses)
-        device_visibility_[address] = true;
-    target_time_ = info.timestamps.empty() ? 0 : info.min_timestamp;
+        device_window_states_.try_emplace(address);
+    timeline_sync_.selectTime(info.timestamps.empty() ? 0 : info.min_timestamp);
     first_layout_ = true;
     arrange_devices_ = false;
-    scroll_all_devices_timeline_ = false;
-    scroll_device_timeline_ = false;
-    scroll_timelines_to_target_ = false;
 }
 
 void MainWindow::refreshLive(I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info)
 {
-    target_time_ = info.max_timestamp;
-    TimelineView::rebuild(access_timeline_, devicemanager);
-    scroll_timelines_to_target_ = true;
+    timeline_sync_.selectTime(info.max_timestamp);
+    TimelineView::rebuild(timeline_view_, devicemanager);
 }
 
 void MainWindow::handleArrowKeys(const I2CEventProcessor::Info& info)
 {
     if (info.timestamps.empty() || ImGui::GetIO().WantTextInput)
         return;
-    const auto previous_time = target_time_;
-    const auto position = std::ranges::lower_bound(info.timestamps, target_time_);
+    const auto previous_time = timeline_sync_.position().time;
+    auto target_time = previous_time;
+    const auto position = std::ranges::lower_bound(info.timestamps, target_time);
     auto index = static_cast<std::size_t>(std::distance(info.timestamps.begin(), position));
     index = std::min(index, info.timestamps.size() - 1);
     if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && index > 0)
-        target_time_ = info.timestamps[index - 1];
+        target_time = info.timestamps[index - 1];
     if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && index + 1 < info.timestamps.size())
-        target_time_ = info.timestamps[index + 1];
-    if (target_time_ != previous_time && sync_all_devices_timeline_)
-        scroll_timelines_to_target_ = true;
+        target_time = info.timestamps[index + 1];
+    if (target_time != previous_time)
+        timeline_sync_.selectTime(target_time);
 }
 
 void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info)
@@ -105,7 +102,7 @@ void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const I
     {
         ImGui::Text("Devices loaded from JSON: %zu", devicemanager.GetAllDevices().size());
         const bool any_visible = std::ranges::any_of(info.active_addresses, [&](std::uint8_t address) {
-            return device_visibility_.at(address) && devicemanager.GetAllDevices().contains(address);
+            return device_window_states_.at(address).visible && devicemanager.GetAllDevices().contains(address);
         });
         ImGui::BeginDisabled(!any_visible);
         if (ImGui::Button("Arrange evenly"))
@@ -118,7 +115,7 @@ void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const I
                 continue;
             has_devices = true;
             ImGui::PushID(static_cast<int>(address));
-            auto& visible = device_visibility_.at(address);
+            auto& visible = device_window_states_.at(address).visible;
             ImGui::Checkbox("##Visible", &visible);
             ImGui::SameLine();
             ImGui::Text("0x%02X  %s", address, device->GetDeviceName().c_str());
@@ -140,13 +137,13 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const I2CEventProcessor
     // Addresses can arrive before any snapshot (and therefore before refreshLive).
     // Initialize visibility before rendering can insert a default false entry.
     for (const auto address : info.active_addresses)
-        if (device_visibility_.try_emplace(address, true).second)
+        if (device_window_states_.try_emplace(address).second)
             first_layout_ = true;
 
     const auto dockspace_id = ImGui::GetID("DeviceDockSpace");
     if (first_layout_)
     {
-        TimelineView::rebuild(access_timeline_, devicemanager);
+        TimelineView::rebuild(timeline_view_, devicemanager);
         setupDockLayout(devicemanager, info, dockspace_id);
     }
     if (arrange_devices_)
@@ -157,7 +154,7 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const I2CEventProcessor
             left_column_width = dockspace_node->ChildNodes[0]->Size.x;
         I2CEventProcessor::Info visible_info;
         for (const auto address : info.active_addresses)
-            if (device_visibility_.at(address) && devicemanager.GetDevice(address) != nullptr)
+            if (device_window_states_.at(address).visible && devicemanager.GetDevice(address) != nullptr)
                 visible_info.active_addresses.push_back(address);
         if (!visible_info.active_addresses.empty())
             setupDockLayout(devicemanager, visible_info, dockspace_id, left_column_width);
@@ -166,26 +163,14 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const I2CEventProcessor
 
     ImGui::DockSpaceOverViewport(dockspace_id, ImGui::GetMainViewport());
     handleArrowKeys(info);
-    const auto control_result = control_panel_.render(devicemanager, info, time_format_, target_time_,
-                                                      sync_all_devices_timeline_, live_receiver);
+    auto target_time = timeline_sync_.position().time;
+    const auto control_result = control_panel_.render(devicemanager, info, time_format_, target_time,
+                                                      timeline_sync_, live_receiver);
+    if (target_time != timeline_sync_.position().time)
+        timeline_sync_.selectTime(target_time);
     const TimeValue::DisplayView time_display(info, time_format_);
-    if (control_result.slider_changed &&
-        sync_all_devices_timeline_)
-        scroll_timelines_to_target_ = true;
-    if (!sync_all_devices_timeline_)
-    {
-        scroll_all_devices_timeline_ = false;
-        scroll_device_timeline_ = false;
-        scroll_timelines_to_target_ = false;
-    }
     renderDeviceList(devicemanager, info);
-    TimelineView::render(access_timeline_, devicemanager, time_display, target_time_, sync_all_devices_timeline_,
-                         scroll_all_devices_timeline_, scroll_device_timeline_, scroll_device_address_,
-                         scroll_snapshot_index_, scroll_timelines_to_target_, control_result.jump_time);
-    DeviceWindow::render(devicemanager, device_visibility_, time_display, target_time_, sync_all_devices_timeline_,
-                         scroll_all_devices_timeline_, scroll_device_timeline_, scroll_device_address_,
-                         scroll_snapshot_index_, scroll_timelines_to_target_);
-    scroll_device_timeline_ = false;
-    scroll_timelines_to_target_ = false;
+    TimelineView::render(timeline_view_, devicemanager, time_display, timeline_sync_, control_result.jump_time);
+    DeviceWindow::render(devicemanager, device_window_states_, time_display, timeline_sync_);
     first_layout_ = false;
 }

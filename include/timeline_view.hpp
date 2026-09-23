@@ -1,6 +1,8 @@
 #pragma once
 
 #include "i2c_device.hpp"
+#include "timeline_sync.hpp"
+#include "view_helpers.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -18,10 +20,16 @@ struct AccessRow
 
 using AccessTimeline = std::vector<AccessRow>;
 
-void rebuild(AccessTimeline& timeline, const I2CDeviceManager& devicemanager);
-void render(AccessTimeline& timeline, I2CDeviceManager& devicemanager,
-            const TimeValue::DisplayView& display, Timestamp& target_time,
-            bool sync_timeline_positions, bool& scroll_all_devices_timeline, bool& scroll_device_timeline,
-            std::uint8_t& scroll_device_address, std::size_t& scroll_snapshot_index,
-            bool scroll_timelines_to_target, std::optional<Timestamp> jump_time);
+struct State
+{
+    AccessTimeline access_timeline;
+    std::vector<ViewHelpers::TransactionRow> grouped_timeline;
+    ViewHelpers::TimelineFilters<7> filters{};
+    bool group_transactions{false};
+    std::uint64_t applied_revision{0};
+};
+
+void rebuild(State& state, const I2CDeviceManager& devicemanager);
+void render(State& state, I2CDeviceManager& devicemanager, const TimeValue::DisplayView& display,
+            TimelineSyncState& sync, std::optional<Timestamp> jump_time);
 } // namespace TimelineView

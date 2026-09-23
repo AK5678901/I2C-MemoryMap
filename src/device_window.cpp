@@ -77,7 +77,7 @@ void renderRegisterRows(const I2CDevice::Snapshot& snapshot, const bool register
 }
 
 std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
-                                                     const TimeValue::DisplayView& display, Timestamp& target_time,
+                                                     const TimeValue::DisplayView& display, const Timestamp target_time,
                                                      std::optional<std::size_t> requested_index,
                                                      const bool scroll_to_selected,
                                                      ViewHelpers::TimelineFilters<5>& filters)
@@ -139,7 +139,6 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
         if (key_index)
         {
             const auto& row = rows[visible_rows[*key_index]];
-            target_time = row.timestamp;
             selected_index = row.last_snapshot_index;
             scroll_index = key_index;
         }
@@ -160,10 +159,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
             ImGui::TableSetColumnIndex(0);
             const auto label = display.formatTimestamp(row.timestamp);
             if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
-            {
-                target_time = row.timestamp;
                 selected_index = row.last_snapshot_index;
-            }
             if (scroll_index == static_cast<std::size_t>(index))
                 ImGui::SetScrollHereY(0.5F);
             ImGui::TableSetColumnIndex(1);
@@ -182,7 +178,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
 }
 
 std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
-                                                  const TimeValue::DisplayView& display, Timestamp& target_time,
+                                                  const TimeValue::DisplayView& display, const Timestamp target_time,
                                                   std::optional<std::size_t> scroll_index,
                                                   const bool scroll_to_selected,
                                                   ViewHelpers::TimelineFilters<5>& filters)
@@ -246,7 +242,6 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
             selected_index = visible_rows[selected_count];
         if (selected_index)
         {
-            target_time = device.GetSnapshotByIndex(*selected_index).timestamp;
             scroll_index = static_cast<std::size_t>(std::distance(
                 visible_rows.begin(), std::ranges::find(visible_rows, *selected_index)));
         }
@@ -267,10 +262,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
             ImGui::TableSetColumnIndex(0);
             const auto time_label = display.formatTimestamp(entry.timestamp);
             if (ImGui::Selectable(time_label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
-            {
-                target_time = entry.timestamp;
                 selected_index = visible_rows[index];
-            }
             if (scroll_index == static_cast<std::size_t>(index))
                 ImGui::SetScrollHereY(0.5F);
             ImGui::TableSetColumnIndex(1);
@@ -369,26 +361,19 @@ std::string DeviceWindow::name(const I2CDevice& device, const std::uint8_t addre
     return std::format("{} [0x{:02X}]", device.GetDeviceName(), address);
 }
 
-void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t, bool>& visibility,
-                          const TimeValue::DisplayView& display, Timestamp& target_time,
-                          const bool sync_timeline_positions,
-                          bool& scroll_all_devices_timeline, bool& scroll_device_timeline,
-                          std::uint8_t& scroll_device_address, std::size_t& scroll_snapshot_index,
-                          const bool scroll_timelines_to_target)
+void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t, State>& states,
+                          const TimeValue::DisplayView& display, TimelineSyncState& sync)
 {
-    static std::map<std::uint8_t, ViewHelpers::TimelineFilters<5>> timeline_filters;
-    static std::map<std::uint8_t, bool> group_transactions;
-    static std::map<std::uint8_t, float> statistics_heights;
-    static std::map<std::uint8_t, bool> timeline_was_active;
     for (const auto& [address, device] : devicemanager.GetAllDevices())
     {
-        const auto position = visibility.find(address);
-        if (position == visibility.end() || !position->second)
+        const auto position = states.find(address);
+        if (position == states.end() || !position->second.visible)
             continue;
-        auto& visible = position->second;
+        auto& state = position->second;
+        const auto target_time = sync.position().time;
         const auto window_name = name(*device, address);
         ImGui::SetNextWindowSize(ImVec2(500.0F, 600.0F), ImGuiCond_FirstUseEver);
-        if (!ImGui::Begin(window_name.c_str(), &visible))
+        if (!ImGui::Begin(window_name.c_str(), &state.visible))
         {
             ImGui::End();
             continue;
@@ -398,9 +383,8 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
         const float available_height = ImGui::GetContentRegionAvail().y;
         const float maximum_statistics_height = std::max(minimum_pane_height,
                                                          available_height - splitter_height - minimum_pane_height);
-        auto& statistics_height = statistics_heights.try_emplace(address, 200.0F).first->second;
-        statistics_height = std::clamp(statistics_height, minimum_pane_height, maximum_statistics_height);
-        if (ImGui::BeginChild("AccessStatisticsPane", ImVec2(0.0F, statistics_height)))
+        state.statistics_height = std::clamp(state.statistics_height, minimum_pane_height, maximum_statistics_height);
+        if (ImGui::BeginChild("AccessStatisticsPane", ImVec2(0.0F, state.statistics_height)))
             renderAccessStatistics(*device, target_time);
         ImGui::EndChild();
 
@@ -408,8 +392,8 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
         if (ImGui::IsItemHovered() || ImGui::IsItemActive())
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
         if (ImGui::IsItemActive())
-            statistics_height = std::clamp(statistics_height + ImGui::GetIO().MouseDelta.y,
-                                           minimum_pane_height, maximum_statistics_height);
+            state.statistics_height = std::clamp(state.statistics_height + ImGui::GetIO().MouseDelta.y,
+                                                 minimum_pane_height, maximum_statistics_height);
         const auto splitter_min = ImGui::GetItemRectMin();
         const auto splitter_max = ImGui::GetItemRectMax();
         ImGui::GetWindowDrawList()->AddLine(ImVec2(splitter_min.x, (splitter_min.y + splitter_max.y) * 0.5F),
@@ -431,35 +415,29 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                 }
                 ImGui::EndTabItem();
             }
-            const bool timeline_active = ImGui::BeginTabItem("Timeline");
-            const bool timeline_just_activated = timeline_active && !timeline_was_active[address];
-            if (timeline_active)
+            if (ImGui::BeginTabItem("Timeline"))
             {
-                auto& grouped = group_transactions.try_emplace(address, false).first->second;
-                ImGui::Checkbox("Group by transaction", &grouped);
-                ImGui::TextWrapped(grouped
+                ImGui::Checkbox("Group by transaction", &state.group_transactions);
+                ImGui::TextWrapped(state.group_transactions
                                        ? "Entire log, oldest first. One row per transaction segment.\nClick a row or use Up/Down to select its time."
                                        : "Entire log, oldest first. One row per data-byte update.\nClick a row or use Up/Down to select its time.");
-                const auto requested_index = scroll_device_timeline && scroll_device_address == address
-                                                 ? std::optional<std::size_t>(scroll_snapshot_index)
+                const bool sync_pending = sync.enabled() && state.applied_revision != sync.revision();
+                const auto requested_index = sync_pending && sync.position().snapshot &&
+                                                     sync.position().snapshot->device_address == address
+                                                 ? std::optional<std::size_t>(sync.position().snapshot->snapshot_index)
                                                  : std::nullopt;
-                const bool scroll_to_selected =
-                    scroll_timelines_to_target || (sync_timeline_positions && timeline_just_activated);
                 if (const auto clicked_index =
-                        grouped
+                        state.group_transactions
                             ? renderTransactionTimeline(*device, display, target_time, requested_index,
-                                                        scroll_to_selected, timeline_filters[address])
+                                                        sync_pending, state.timeline_filters)
                             : renderRegisterTimeline(*device, display, target_time, requested_index,
-                                                     scroll_to_selected, timeline_filters[address]);
-                    sync_timeline_positions && clicked_index.has_value())
-                {
-                    scroll_all_devices_timeline = true;
-                    scroll_device_address = address;
-                    scroll_snapshot_index = *clicked_index;
-                }
+                                                     sync_pending, state.timeline_filters);
+                    clicked_index.has_value())
+                    sync.selectSnapshot(device->GetSnapshotByIndex(*clicked_index).timestamp,
+                                        address, *clicked_index);
+                state.applied_revision = sync.revision();
                 ImGui::EndTabItem();
             }
-            timeline_was_active[address] = timeline_active;
             ImGui::EndTabBar();
         }
         ImGui::EndChild();

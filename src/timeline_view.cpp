@@ -14,19 +14,16 @@
 
 namespace
 {
-std::vector<ViewHelpers::TransactionRow> grouped_timeline;
-
 constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"I2C Address", 80.0F}, {"Device", 119.0F},
                                                              {"Register", 61.0F},    {"Name", 110.0F},
                                                              {"Write Data", 110.0F}, {"Read Data", 110.0F}};
 
 void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2CDeviceManager& devicemanager,
-                        const TimeValue::DisplayView& display, Timestamp& target_time,
-                        const bool sync_timeline_positions, bool& scroll_all_devices_timeline,
-                        bool& scroll_device_timeline, std::uint8_t& scroll_device_address,
-                        std::size_t& scroll_snapshot_index, const bool scroll_timelines_to_target,
+                        const TimeValue::DisplayView& display, TimelineSyncState& sync,
+                        const bool sync_pending, const bool jump_to_target,
                         ViewHelpers::TimelineFilters<7>& filters)
 {
+    const auto target_time = sync.position().time;
     ImGui::Text("Transactions: %zu", rows.size());
     if (!ImGui::BeginTable("AllTransactions", 7, ViewHelpers::table_flags))
         return;
@@ -63,17 +60,18 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
                                            });
     const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
     std::optional<std::size_t> scroll_index;
-    if (scroll_all_devices_timeline)
+    if (sync_pending && sync.position().snapshot)
     {
+        const auto target = *sync.position().snapshot;
         const auto found = std::ranges::find_if(visible_rows, [&](std::size_t index) {
             const auto& row = rows[index];
-            return row.device_address == scroll_device_address &&
-                   row.first_snapshot_index <= scroll_snapshot_index && scroll_snapshot_index <= row.last_snapshot_index;
+            return row.device_address == target.device_address &&
+                   row.first_snapshot_index <= target.snapshot_index && target.snapshot_index <= row.last_snapshot_index;
         });
         if (found != visible_rows.end())
             scroll_index = static_cast<std::size_t>(std::distance(visible_rows.begin(), found));
     }
-    if (!scroll_index && (scroll_timelines_to_target || filter_changed) && selected_count > 0)
+    if (!scroll_index && (sync_pending || jump_to_target || filter_changed) && selected_count > 0)
         scroll_index = selected_count - 1;
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput)
     {
@@ -85,14 +83,8 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
         if (key_index)
         {
             const auto& row = rows[visible_rows[*key_index]];
-            target_time = row.timestamp;
             scroll_index = key_index;
-            if (sync_timeline_positions)
-            {
-                scroll_device_timeline = true;
-                scroll_device_address = row.device_address;
-                scroll_snapshot_index = row.last_snapshot_index;
-            }
+            sync.selectSnapshot(row.timestamp, row.device_address, row.last_snapshot_index);
         }
     }
 
@@ -112,15 +104,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             ImGui::TableSetColumnIndex(0);
             const auto label = display.formatTimestamp(row.timestamp);
             if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
-            {
-                target_time = row.timestamp;
-                if (sync_timeline_positions)
-                {
-                    scroll_device_timeline = true;
-                    scroll_device_address = row.device_address;
-                    scroll_snapshot_index = row.last_snapshot_index;
-                }
-            }
+                sync.selectSnapshot(row.timestamp, row.device_address, row.last_snapshot_index);
             if (scroll_index == static_cast<std::size_t>(index))
                 ImGui::SetScrollHereY(0.5F);
             ImGui::TableSetColumnIndex(1);
@@ -139,36 +123,31 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
         }
     }
     ImGui::EndTable();
-    scroll_all_devices_timeline = false;
 }
 } // namespace
 
-void TimelineView::rebuild(AccessTimeline& timeline, const I2CDeviceManager& devicemanager)
+void TimelineView::rebuild(State& state, const I2CDeviceManager& devicemanager)
 {
-    timeline.clear();
-    grouped_timeline.clear();
+    state.access_timeline.clear();
+    state.grouped_timeline.clear();
     for (const auto& [address, device] : devicemanager.GetAllDevices())
         for (std::size_t index = 0; index < device->GetSnapshotCount(); ++index)
-            timeline.push_back({device->GetSnapshotByIndex(index).timestamp, address, index});
-    std::stable_sort(timeline.begin(), timeline.end(),
+            state.access_timeline.push_back({device->GetSnapshotByIndex(index).timestamp, address, index});
+    std::stable_sort(state.access_timeline.begin(), state.access_timeline.end(),
                      [](const AccessRow& left, const AccessRow& right) { return left.timestamp < right.timestamp; });
-    for (const auto& access : timeline)
+    for (const auto& access : state.access_timeline)
     {
         const auto* device = devicemanager.GetAllDevices().at(access.device_address).get();
-        ViewHelpers::appendTransactionByte(grouped_timeline, access.device_address, access.snapshot_index,
+        ViewHelpers::appendTransactionByte(state.grouped_timeline, access.device_address, access.snapshot_index,
                                            device->GetSnapshotByIndex(access.snapshot_index));
     }
 }
 
-void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemanager,
-                          const TimeValue::DisplayView& display, Timestamp& target_time,
-                          const bool sync_timeline_positions, bool& scroll_all_devices_timeline,
-                          bool& scroll_device_timeline, std::uint8_t& scroll_device_address,
-                          std::size_t& scroll_snapshot_index, const bool scroll_timelines_to_target,
+void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
+                          const TimeValue::DisplayView& display, TimelineSyncState& sync,
                           std::optional<Timestamp> jump_time)
 {
-    static ViewHelpers::TimelineFilters<7> filters{};
-    static bool group_transactions = false;
+    auto& timeline = state.access_timeline;
     if (!ViewHelpers::beginFixedLeftWindow("All Devices - Timeline"))
     {
         ImGui::End();
@@ -185,28 +164,25 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
             (next != timeline.begin() &&
             *jump_time - std::prev(next)->timestamp <= next->timestamp - *jump_time))
             nearest = std::prev(next);
-        target_time = nearest->timestamp;
-        scroll_all_devices_timeline = true;
-        scroll_device_address = nearest->device_address;
-        scroll_snapshot_index = nearest->snapshot_index;
-        if (sync_timeline_positions)
-            scroll_device_timeline = true;
-        for (auto& filter : filters)
+        sync.selectSnapshot(nearest->timestamp, nearest->device_address, nearest->snapshot_index);
+        for (auto& filter : state.filters)
             filter[0] = '\0';
         jump_to_target = true;
     }
-    ImGui::Checkbox("Group by transaction", &group_transactions);
-    ImGui::TextWrapped(group_transactions
+    ImGui::Checkbox("Group by transaction", &state.group_transactions);
+    ImGui::TextWrapped(state.group_transactions
                            ? "All devices, oldest first. One row per transaction segment.\nClick a row or use Up/Down to select its time."
                            : "All devices, oldest first. One row per data-byte update.\nClick a row or use Up/Down to select its time.");
-    if (group_transactions)
+    const bool sync_pending = sync.enabled() && state.applied_revision != sync.revision();
+    if (state.group_transactions)
     {
-        renderTransactions(grouped_timeline, devicemanager, display, target_time, sync_timeline_positions,
-                           scroll_all_devices_timeline, scroll_device_timeline, scroll_device_address,
-                           scroll_snapshot_index, scroll_timelines_to_target || jump_to_target, filters);
+        renderTransactions(state.grouped_timeline, devicemanager, display, sync, sync_pending,
+                           jump_to_target, state.filters);
+        state.applied_revision = sync.revision();
         ImGui::End();
         return;
     }
+    const auto target_time = sync.position().time;
     ImGui::Text("Databytes: %zu", timeline.size());
     if (ImGui::BeginTable("AllAccesses", 7, ViewHelpers::table_flags))
     {
@@ -214,10 +190,10 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
         ViewHelpers::setupTimelineColumns(display, sample_time, kTimelineColumns);
         ImGui::TableSetupScrollFreeze(0, 2);
         ImGui::TableHeadersRow();
-        const bool filter_changed = ViewHelpers::renderTimelineFilterRow(filters);
+        const bool filter_changed = ViewHelpers::renderTimelineFilterRow(state.filters);
         std::vector<std::size_t> visible_rows;
         visible_rows.reserve(timeline.size());
-        const bool has_filter = std::ranges::any_of(filters, [](const auto& filter) { return filter[0] != '\0'; });
+        const bool has_filter = std::ranges::any_of(state.filters, [](const auto& filter) { return filter[0] != '\0'; });
         if (!has_filter)
         {
             visible_rows.resize(timeline.size());
@@ -231,17 +207,17 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
                 const auto* device = devicemanager.GetDevice(row.device_address);
                 const auto& entry = device->GetSnapshotByIndex(row.snapshot_index);
                 const auto matches = [&](std::size_t column, const std::string& value) {
-                    return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
+                    return ViewHelpers::matchesTimelineFilter(state.filters[column].data(), value);
                 };
-                if ((!filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
-                    (!filters[1][0] || matches(1, std::format("0x{:02X}", row.device_address))) &&
-                    (!filters[2][0] || matches(2, device->GetDeviceName())) &&
-                    (!filters[3][0] || matches(3, device->GetRegisterAddressBytes() == 0
+                if ((!state.filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
+                    (!state.filters[1][0] || matches(1, std::format("0x{:02X}", row.device_address))) &&
+                    (!state.filters[2][0] || matches(2, device->GetDeviceName())) &&
+                    (!state.filters[3][0] || matches(3, device->GetRegisterAddressBytes() == 0
                                                    ? "-" : std::format("0x{:04X}", entry.updated_register_address))) &&
-                    (!filters[4][0] || matches(4, device->GetRegisterName(entry.updated_register_address))) &&
-                    (!filters[5][0] || matches(5, entry.is_write
+                    (!state.filters[4][0] || matches(4, device->GetRegisterName(entry.updated_register_address))) &&
+                    (!state.filters[5][0] || matches(5, entry.is_write
                                                    ? ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.write_data) : "")) &&
-                    (!filters[6][0] || matches(6, entry.is_write
+                    (!state.filters[6][0] || matches(6, entry.is_write
                                                    ? "" : ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.read_data))))
                     visible_rows.push_back(index);
             }
@@ -252,16 +228,17 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
                                                });
         const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
         std::optional<std::size_t> scroll_index;
-        if (scroll_all_devices_timeline)
+        if (sync_pending && sync.position().snapshot)
         {
+            const auto target = *sync.position().snapshot;
             const auto scroll_row = std::ranges::find_if(visible_rows, [&](std::size_t index) {
                 const auto& row = timeline[index];
-                return row.device_address == scroll_device_address && row.snapshot_index == scroll_snapshot_index;
+                return row.device_address == target.device_address && row.snapshot_index == target.snapshot_index;
             });
             if (scroll_row != visible_rows.end())
                 scroll_index = static_cast<std::size_t>(std::distance(visible_rows.begin(), scroll_row));
         }
-        if (!scroll_index.has_value() && (scroll_timelines_to_target || jump_to_target || filter_changed) && selected_count > 0)
+        if (!scroll_index.has_value() && (sync_pending || jump_to_target || filter_changed) && selected_count > 0)
             scroll_index = selected_count - 1;
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput)
         {
@@ -273,14 +250,8 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
             if (key_index)
             {
                 const auto& row = timeline[visible_rows[*key_index]];
-                target_time = row.timestamp;
                 scroll_index = key_index;
-                if (sync_timeline_positions)
-                {
-                    scroll_device_timeline = true;
-                    scroll_device_address = row.device_address;
-                    scroll_snapshot_index = row.snapshot_index;
-                }
+                sync.selectSnapshot(row.timestamp, row.device_address, row.snapshot_index);
             }
         }
 
@@ -301,15 +272,7 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
                 ImGui::TableSetColumnIndex(0);
                 const auto label = display.formatTimestamp(row.timestamp);
                 if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
-                {
-                    target_time = row.timestamp;
-                    if (sync_timeline_positions)
-                    {
-                        scroll_device_timeline = true;
-                        scroll_device_address = row.device_address;
-                        scroll_snapshot_index = row.snapshot_index;
-                    }
-                }
+                    sync.selectSnapshot(row.timestamp, row.device_address, row.snapshot_index);
                 if (scroll_index == static_cast<std::size_t>(index))
                     ImGui::SetScrollHereY(0.5F);
                 ImGui::TableSetColumnIndex(1);
@@ -332,7 +295,7 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
             }
         }
         ImGui::EndTable();
-        scroll_all_devices_timeline = false;
+        state.applied_revision = sync.revision();
     }
     ImGui::End();
 }

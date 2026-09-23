@@ -2,6 +2,7 @@
 
 #include "i2c_device.hpp"
 #include "i2c_event_processor.hpp"
+#include "timeline_sync.hpp"
 #include <array>
 #include <optional>
 
@@ -9,14 +10,14 @@ class LiveReceiver;
 
 namespace ControlPanel
 {
-struct Result { bool slider_changed{false}; std::optional<Timestamp> jump_time; };
+struct Result { std::optional<Timestamp> jump_time; };
 class State
 {
   public:
     void resetJumpInput();
     Result render(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info,
                   TimeValue::DisplayFormat& format, Timestamp& target_time,
-                  bool& sync_timeline_positions, const LiveReceiver* live_receiver);
+                  TimelineSyncState& timeline_sync, const LiveReceiver* live_receiver);
 
   private:
     std::array<char, 96> jump_text_{};

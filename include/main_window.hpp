@@ -1,9 +1,11 @@
 #pragma once
 
 #include "control_panel.hpp"
+#include "device_window.hpp"
 #include "i2c_device.hpp"
 #include "i2c_event_processor.hpp"
 #include "timeline_view.hpp"
+#include "timeline_sync.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,18 +23,12 @@ class MainWindow final
   private:
     void handleArrowKeys(const I2CEventProcessor::Info& info);
     void renderDeviceList(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info);
-    std::map<uint8_t, bool> device_visibility_;
-    TimelineView::AccessTimeline access_timeline_;
+    std::map<std::uint8_t, DeviceWindow::State> device_window_states_;
+    TimelineView::State timeline_view_;
     TimeValue::DisplayFormat time_format_{TimeValue::DisplayFormat::ShortLocal};
     ControlPanel::State control_panel_;
 
-    Timestamp target_time_{0};
+    TimelineSyncState timeline_sync_;
     bool first_layout_{true};
     bool arrange_devices_{false};
-    bool sync_all_devices_timeline_{true};
-    bool scroll_all_devices_timeline_{false};
-    bool scroll_device_timeline_{false};
-    bool scroll_timelines_to_target_{false};
-    uint8_t scroll_device_address_{0};
-    std::size_t scroll_snapshot_index_{0};
 };

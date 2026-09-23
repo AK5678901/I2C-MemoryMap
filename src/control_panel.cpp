@@ -39,7 +39,7 @@ void ControlPanel::State::resetJumpInput()
 
 ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const I2CEventProcessor::Info& info,
                                                  TimeValue::DisplayFormat& format, Timestamp& target_time,
-                                                 bool& sync_timeline_positions,
+                                                 TimelineSyncState& timeline_sync,
                                                  const LiveReceiver* live_receiver)
 {
     Result result;
@@ -84,15 +84,16 @@ ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const 
         ImGui::TextUnformatted("Time navigation");
         ImGui::Spacing();
         ImGui::Indent();
-        ImGui::Checkbox("Sync timeline view positions across windows", &sync_timeline_positions);
+        bool sync_enabled = timeline_sync.enabled();
+        if (ImGui::Checkbox("Sync timeline view positions across windows", &sync_enabled))
+            timeline_sync.setEnabled(sync_enabled);
         if (ImGui::Button("<< Prev"))
             moveToPreviousTimestamp(info, target_time);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0F);
         const Timestamp minimum = info.timestamps.empty() ? 0 : info.min_timestamp;
         const Timestamp maximum = info.timestamps.empty() ? 0 : info.max_timestamp;
-        result.slider_changed = ImGui::SliderScalar("##TimeSlider", ImGuiDataType_S64, &target_time,
-                                                    &minimum, &maximum, "");
+        ImGui::SliderScalar("##TimeSlider", ImGuiDataType_S64, &target_time, &minimum, &maximum, "");
         ImGui::SameLine();
         if (ImGui::Button("Next >>"))
             moveToNextTimestamp(info, target_time);
