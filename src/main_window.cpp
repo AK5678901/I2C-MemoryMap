@@ -28,7 +28,7 @@ void setupDockLayout(I2CDeviceManager& devicemanager, const LogData& log, const 
     ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->WorkSize);
     ImGuiID remaining_id = dockspace_id;
     ImGuiID timeline_id = dockspace_id;
-    float left_ratio = 0.425F;
+    float left_ratio = 0.4332F; // About 830 px at 1920 px, including room for the Read Data column.
     if (left_column_width > 0.0F)
     {
         const float available_width = viewport->WorkSize.x - ImGui::GetStyle().DockingSeparatorSize;
