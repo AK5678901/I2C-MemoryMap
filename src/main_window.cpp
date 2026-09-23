@@ -91,7 +91,7 @@ void MainWindow::refreshLive(I2CDeviceManager& devicemanager, const LogData& log
 
 void MainWindow::handleArrowKeys(const LogData& log)
 {
-    if (log.timestamps.empty())
+    if (log.timestamps.empty() || ImGui::GetIO().WantTextInput)
         return;
     const auto position = std::ranges::lower_bound(log.timestamps, target_time_);
     auto index = static_cast<std::size_t>(std::distance(log.timestamps.begin(), position));
