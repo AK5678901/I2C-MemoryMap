@@ -5,8 +5,8 @@
 #include <string>
 #include <string_view>
 
-using Timestamp = std::int64_t; // Unix nanoseconds, UTC.
-struct LogData;
+#include "timestamp.hpp"
+#include "i2c_event_processor.hpp"
 
 namespace TimeValue
 {
@@ -20,13 +20,13 @@ enum class DisplayFormat { IsoUtc, IsoLocal, ShortUtc, ShortLocal, SinceFirstEve
 class DisplayView
 {
   public:
-    DisplayView(const LogData& log, DisplayFormat format) : log_(log), format_(format) {}
+    DisplayView(const I2CEventProcessor::Info& info, DisplayFormat format) : info_(info), format_(format) {}
     [[nodiscard]] DisplayFormat format() const { return format_; }
     [[nodiscard]] std::string formatTimestamp(Timestamp timestamp) const;
     [[nodiscard]] std::optional<Timestamp> parseDisplayed(std::string_view text, Timestamp reference) const;
 
   private:
-    const LogData& log_;
+    const I2CEventProcessor::Info& info_;
     DisplayFormat format_;
 };
 } // namespace TimeValue

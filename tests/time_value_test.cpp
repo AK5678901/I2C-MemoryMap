@@ -1,5 +1,5 @@
 #include "time_value.hpp"
-#include "log_data.hpp"
+#include "i2c_event_processor.hpp"
 
 #include <stdexcept>
 #include <cstdio>
@@ -17,7 +17,7 @@ void check(bool value, int line)
 
 int main()
 {
-    LogData log;
+    I2CEventProcessor::Info log;
     TimeValue::DisplayFormat format = TimeValue::DisplayFormat::ShortLocal;
     const auto display = [&] { return TimeValue::DisplayView(log, format); };
     const auto time = TimeValue::parse("2026-09-22T08:20:18.204048396+00:00");

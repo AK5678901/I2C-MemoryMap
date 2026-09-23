@@ -1,27 +1,11 @@
 #include "live_receiver.hpp"
+#include "time_value.hpp"
 
 #include <algorithm>
 #include <charconv>
-#include <cmath>
-#include <format>
 #include <optional>
 #include <string_view>
 #include <vector>
-
-namespace
-{
-I2CDevice* findOrRegister(I2CDeviceManager& devices, std::uint8_t address)
-{
-    if (auto* device = devices.GetDevice(address))
-        return device;
-    I2CDevice::Config config{
-        .device_name = std::format("0x{:02X}", address), .i2c_dev_addr = address,
-        .reg_addr_bytes = 1, .auto_addr_inc = true, .support_direct_read_from_default_reg = false,
-        .default_reg_addr = 0, .reg_map_size = 256, .is_little_endian = true,
-    };
-    return devices.RegisterDevice(config);
-}
-}
 
 LiveReceiver::LiveReceiver()
 {
@@ -89,18 +73,14 @@ void LiveReceiver::receiveLoop()
     }
 }
 
-bool LiveReceiver::poll(I2CDeviceManager& devices, LogData& log, bool& reset)
+bool LiveReceiver::poll(I2CDeviceManager& devices, I2CEventProcessor& processor, bool& reset)
 {
     reset = false;
     if (!ready())
         return false;
     bool changed = false;
     const auto reset_capture = [&]() {
-        for (const auto& [address, device] : devices.GetAllDevices())
-            device->ResetRuntime();
-        log = LogData{};
-        log.min_timestamp = std::numeric_limits<Timestamp>::max();
-        current_device_ = nullptr;
+        processor.reset(devices);
         last_frame_timestamp_ = std::numeric_limits<Timestamp>::min();
         last_sequence_ = 0;
         received_frames_ = 0;
@@ -164,9 +144,7 @@ bool LiveReceiver::poll(I2CDeviceManager& devices, LogData& log, bool& reset)
         {
             if (!record_sequence(sequence))
                 continue;
-            for (const auto& [address, device] : devices.GetAllDevices())
-                device->CallThisEachI2CStopCondition();
-            current_device_ = nullptr;
+            processor.process({I2CEvent::Type::Stop}, devices);
             continue;
         }
         if (frame.size() < 3 || frame[1] != ',')
@@ -189,27 +167,21 @@ bool LiveReceiver::poll(I2CDeviceManager& devices, LogData& log, bool& reset)
                 continue;
             unsigned int address = 0;
             const auto parsed = std::from_chars(frame.data() + comma + 1, frame.data() + next, address);
-            if (parsed.ec != std::errc{} || address > 127 || (frame[next + 1] != '0' && frame[next + 1] != '1'))
+            if (parsed.ec != std::errc{} || parsed.ptr != frame.data() + next || address > 127 || (frame[next + 1] != '0' && frame[next + 1] != '1'))
                 continue;
-            current_device_ = findOrRegister(devices, static_cast<std::uint8_t>(address));
-            current_device_->CallThisEachI2CAddrByteWrite(frame[next + 1] == '1');
-            const auto byte_address = static_cast<std::uint8_t>(address);
-            if (std::ranges::find(log.active_addresses, byte_address) == log.active_addresses.end())
-                log.active_addresses.push_back(byte_address);
+            changed |= processor.process({I2CEvent::Type::Address, timestamp,
+                                           static_cast<std::uint8_t>(address), frame[next + 1] == '1'}, devices);
             last_frame_timestamp_ = timestamp;
         }
-        else if (frame[0] == 'D' && current_device_ != nullptr)
+        else if (frame[0] == 'D')
         {
             unsigned int value = 0;
             const auto parsed = std::from_chars(frame.data() + comma + 1, frame.data() + frame.size(), value);
             if (parsed.ec != std::errc{} || parsed.ptr != frame.data() + frame.size() || value > 255)
                 continue;
-            current_device_->DataByte(static_cast<std::uint8_t>(value), timestamp);
-            log.timestamps.push_back(timestamp);
-            log.min_timestamp = std::min(log.min_timestamp, timestamp);
-            log.max_timestamp = std::max(log.max_timestamp, timestamp);
+            changed |= processor.process({I2CEvent::Type::Data, timestamp,
+                                           static_cast<std::uint8_t>(value)}, devices);
             last_frame_timestamp_ = timestamp;
-            changed = true;
         }
     }
     return changed;

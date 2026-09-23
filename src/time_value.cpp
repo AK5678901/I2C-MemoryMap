@@ -1,5 +1,5 @@
 #include "time_value.hpp"
-#include "log_data.hpp"
+#include "i2c_event_processor.hpp"
 
 #include <charconv>
 #include <chrono>
@@ -155,7 +155,7 @@ std::optional<Timestamp> TimeValue::DisplayView::parseDisplayed(std::string_view
     case DisplayFormat::SinceFirstEvent:
     {
         const auto elapsed = parseSeconds(text);
-        const Timestamp origin = log_.timestamps.empty() ? 0 : log_.timestamps.front();
+        const Timestamp origin = info_.timestamps.empty() ? 0 : info_.timestamps.front();
         if (!elapsed || (*elapsed > 0 && origin > std::numeric_limits<Timestamp>::max() - *elapsed) ||
             (*elapsed < 0 && origin < std::numeric_limits<Timestamp>::min() - *elapsed))
             return std::nullopt;
@@ -250,11 +250,11 @@ std::string TimeValue::DisplayView::formatTimestamp(Timestamp value) const
     case DisplayFormat::ShortUtc: return formatCalendar(value, false, true);
     case DisplayFormat::ShortLocal: return formatCalendar(value, true, true);
     case DisplayFormat::SinceFirstEvent:
-        return formatElapsed(value, log_.timestamps.empty() ? 0 : log_.timestamps.front());
+        return formatElapsed(value, info_.timestamps.empty() ? 0 : info_.timestamps.front());
     case DisplayFormat::RawCsv:
-        if (const auto found = log_.raw_csv_timestamps.find(value); found != log_.raw_csv_timestamps.end())
+        if (const auto found = info_.raw_csv_timestamps.find(value); found != info_.raw_csv_timestamps.end())
             return found->second;
-        return log_.has_csv_timestamps && !log_.has_absolute_timestamps && !log_.raw_csv_timestamps.empty()
+        return info_.has_csv_timestamps && !info_.has_absolute_timestamps && !info_.raw_csv_timestamps.empty()
                    ? formatSeconds(value) : formatIso(value);
     }
     return {};

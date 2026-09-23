@@ -381,9 +381,10 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
     static std::map<std::uint8_t, float> statistics_heights;
     for (const auto& [address, device] : devicemanager.GetAllDevices())
     {
-        auto& visible = visibility[address];
-        if (!visible)
+        const auto position = visibility.find(address);
+        if (position == visibility.end() || !position->second)
             continue;
+        auto& visible = position->second;
         const auto window_name = name(*device, address);
         ImGui::SetNextWindowSize(ImVec2(500.0F, 600.0F), ImGuiCond_FirstUseEver);
         if (!ImGui::Begin(window_name.c_str(), &visible))

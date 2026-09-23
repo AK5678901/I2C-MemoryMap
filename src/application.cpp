@@ -29,8 +29,7 @@ int Application::run()
             MessageBoxW(nullptr, L"Could not listen on UDP port 48152.", L"Error", MB_OK | MB_ICONERROR);
             return 1;
         }
-        log_.min_timestamp = 0;
-        main_window_.reset(log_);
+        main_window_.reset(processor_.GetInfo());
         glfwSetWindowTitle(&gui_.window(), "I2C_MemoryMap - Saleae Logic 2 live");
     }
     else if (!selectAndLoadLog())
@@ -53,8 +52,8 @@ bool Application::selectAndLoadLog()
     if (!csv_path)
         return false;
 
-    log_ = importCsvLog(devicemanager_, *csv_path);
-    main_window_.reset(log_);
+    importCsvLog(devicemanager_, processor_, *csv_path);
+    main_window_.reset(processor_.GetInfo());
     const auto title = std::format("I2C_MemoryMap - [{}]", pathToUtf8(*csv_path));
     glfwSetWindowTitle(&gui_.window(), title.c_str());
     return true;
@@ -68,14 +67,14 @@ void Application::runMainLoop()
         if (live_receiver_)
         {
             bool reset = false;
-            const bool changed = live_receiver_->poll(devicemanager_, log_, reset);
+            const bool changed = live_receiver_->poll(devicemanager_, processor_, reset);
             if (reset)
-                main_window_.reset(log_);
+                main_window_.reset(processor_.GetInfo());
             if (changed)
-                main_window_.refreshLive(devicemanager_, log_);
+                main_window_.refreshLive(devicemanager_, processor_.GetInfo());
         }
         gui_.beginFrame();
-        main_window_.render(devicemanager_, log_, live_receiver_.get());
+        main_window_.render(devicemanager_, processor_.GetInfo(), live_receiver_.get());
         gui_.endFrame();
         if (gui_.shouldClose())
             break;

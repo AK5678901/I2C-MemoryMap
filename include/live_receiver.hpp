@@ -1,7 +1,6 @@
 #pragma once
 
-#include "i2c_device.hpp"
-#include "log_data.hpp"
+#include "i2c_event_processor.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -22,7 +21,7 @@ class LiveReceiver final
     LiveReceiver(const LiveReceiver&) = delete;
     LiveReceiver& operator=(const LiveReceiver&) = delete;
     [[nodiscard]] bool ready() const { return socket_ != INVALID_SOCKET; }
-    [[nodiscard]] bool poll(I2CDeviceManager& devices, LogData& log, bool& reset);
+    [[nodiscard]] bool poll(I2CDeviceManager& devices, I2CEventProcessor& processor, bool& reset);
     [[nodiscard]] std::uint64_t receivedFrames() const { return received_frames_; }
     [[nodiscard]] std::uint64_t missingFrames() const { return missing_frames_; }
     [[nodiscard]] bool hasSequence() const { return has_sequence_; }
@@ -40,7 +39,6 @@ class LiveReceiver final
     std::deque<std::string> queue_;
     std::atomic<std::uint64_t> dropped_queued_frames_{0};
     int socket_buffer_bytes_{0};
-    I2CDevice* current_device_{nullptr};
     Timestamp last_frame_timestamp_{std::numeric_limits<Timestamp>::min()};
     std::uint64_t last_sequence_{0};
     std::uint64_t received_frames_{0};

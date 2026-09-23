@@ -2,7 +2,7 @@
 
 #include "control_panel.hpp"
 #include "i2c_device.hpp"
-#include "log_data.hpp"
+#include "i2c_event_processor.hpp"
 #include "timeline_view.hpp"
 
 #include <cstddef>
@@ -14,13 +14,13 @@ class LiveReceiver;
 class MainWindow final
 {
   public:
-    void reset(const LogData& log);
-    void refreshLive(I2CDeviceManager& devicemanager, const LogData& log);
-    void render(I2CDeviceManager& devicemanager, const LogData& log, const LiveReceiver* live_receiver = nullptr);
+    void reset(const I2CEventProcessor::Info& info);
+    void refreshLive(I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info);
+    void render(I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info, const LiveReceiver* live_receiver = nullptr);
 
   private:
-    void handleArrowKeys(const LogData& log);
-    void renderDeviceList(const I2CDeviceManager& devicemanager, const LogData& log);
+    void handleArrowKeys(const I2CEventProcessor::Info& info);
+    void renderDeviceList(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info);
     std::map<uint8_t, bool> device_visibility_;
     TimelineView::AccessTimeline access_timeline_;
     TimeValue::DisplayFormat time_format_{TimeValue::DisplayFormat::ShortLocal};

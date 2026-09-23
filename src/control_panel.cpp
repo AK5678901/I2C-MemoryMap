@@ -11,21 +11,21 @@
 
 namespace
 {
-void moveToPreviousTimestamp(const LogData& log, Timestamp& target_time)
+void moveToPreviousTimestamp(const I2CEventProcessor::Info& info, Timestamp& target_time)
 {
-    if (log.timestamps.empty())
+    if (info.timestamps.empty())
         return;
-    const auto position = std::ranges::lower_bound(log.timestamps, target_time);
-    const auto index = static_cast<std::size_t>(std::distance(log.timestamps.begin(), position));
-    target_time = index > 0 ? log.timestamps[index - 1] : log.timestamps.front();
+    const auto position = std::ranges::lower_bound(info.timestamps, target_time);
+    const auto index = static_cast<std::size_t>(std::distance(info.timestamps.begin(), position));
+    target_time = index > 0 ? info.timestamps[index - 1] : info.timestamps.front();
 }
 
-void moveToNextTimestamp(const LogData& log, Timestamp& target_time)
+void moveToNextTimestamp(const I2CEventProcessor::Info& info, Timestamp& target_time)
 {
-    if (log.timestamps.empty())
+    if (info.timestamps.empty())
         return;
-    const auto position = std::ranges::upper_bound(log.timestamps, target_time);
-    target_time = position != log.timestamps.end() ? *position : log.timestamps.back();
+    const auto position = std::ranges::upper_bound(info.timestamps, target_time);
+    target_time = position != info.timestamps.end() ? *position : info.timestamps.back();
 }
 } // namespace
 
@@ -37,7 +37,7 @@ void ControlPanel::State::resetJumpInput()
     previous_format_.reset();
 }
 
-ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const LogData& log,
+ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const I2CEventProcessor::Info& info,
                                                  TimeValue::DisplayFormat& format, Timestamp& target_time,
                                                  bool& sync_timeline_positions,
                                                  const LiveReceiver* live_receiver)
@@ -59,7 +59,7 @@ ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const 
         ImGui::TextUnformatted("Time format");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(190.0F);
-        const char* formats = log.has_csv_timestamps
+        const char* formats = info.has_csv_timestamps
                                   ? "UTC ISO 8601\0Local ISO 8601\0UTC short\0Local short\0Since first event\0CSV original\0"
                                   : "UTC ISO 8601\0Local ISO 8601\0UTC short\0Local short\0Since first event\0";
         if (ImGui::Combo("##Time format", &selected_format, formats))
@@ -67,11 +67,11 @@ ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const 
         ImGui::Unindent();
     }
     ImGui::EndChild();
-    const TimeValue::DisplayView display(log, format);
+    const TimeValue::DisplayView display(info, format);
     const bool format_changed = previous_format_ && *previous_format_ != format;
-    if (!log.timestamps.empty() && (!jump_initialized_ || format_changed))
+    if (!info.timestamps.empty() && (!jump_initialized_ || format_changed))
     {
-        const auto value = display.formatTimestamp(log.timestamps.front());
+        const auto value = display.formatTimestamp(info.timestamps.front());
         jump_text_.fill('\0');
         std::memcpy(jump_text_.data(), value.data(), std::min(value.size(), jump_text_.size() - 1));
         jump_initialized_ = true;
@@ -86,16 +86,16 @@ ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const 
         ImGui::Indent();
         ImGui::Checkbox("Sync timeline view positions across windows", &sync_timeline_positions);
         if (ImGui::Button("<< Prev"))
-            moveToPreviousTimestamp(log, target_time);
+            moveToPreviousTimestamp(info, target_time);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 70.0F);
-        const Timestamp minimum = log.timestamps.empty() ? 0 : log.min_timestamp;
-        const Timestamp maximum = log.timestamps.empty() ? 0 : log.max_timestamp;
+        const Timestamp minimum = info.timestamps.empty() ? 0 : info.min_timestamp;
+        const Timestamp maximum = info.timestamps.empty() ? 0 : info.max_timestamp;
         result.slider_changed = ImGui::SliderScalar("##TimeSlider", ImGuiDataType_S64, &target_time,
                                                     &minimum, &maximum, "");
         ImGui::SameLine();
         if (ImGui::Button("Next >>"))
-            moveToNextTimestamp(log, target_time);
+            moveToNextTimestamp(info, target_time);
         ImGui::TextWrapped("Selected: %s", display.formatTimestamp(target_time).c_str());
         ImGui::SetNextItemWidth(265.0F);
         const bool submitted = ImGui::InputText("Time##JumpTime", jump_text_.data(), jump_text_.size(),
@@ -107,7 +107,7 @@ ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const 
         if (submitted || clicked)
         {
             result.jump_time = display.parseDisplayed(jump_text_.data(),
-                                                        log.timestamps.empty() ? target_time : log.timestamps.front());
+                                                        info.timestamps.empty() ? target_time : info.timestamps.front());
             jump_invalid_ = !result.jump_time.has_value();
         }
         if (jump_invalid_)

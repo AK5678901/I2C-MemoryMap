@@ -1,8 +1,8 @@
 #pragma once
 
 #include "i2c_device.hpp"
-#include "log_data.hpp"
+#include "i2c_event_processor.hpp"
 
 #include <filesystem>
 
-[[nodiscard]] LogData importCsvLog(I2CDeviceManager& devicemanager, const std::filesystem::path& filename);
+void importCsvLog(I2CDeviceManager& devicemanager, I2CEventProcessor& processor, const std::filesystem::path& filename);

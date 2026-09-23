@@ -2,7 +2,7 @@
 
 #include "gui_context.hpp"
 #include "i2c_device.hpp"
-#include "log_data.hpp"
+#include "i2c_event_processor.hpp"
 #include "main_window.hpp"
 #include "live_receiver.hpp"
 
@@ -20,7 +20,7 @@ class Application final
 
     GuiContext gui_;
     I2CDeviceManager devicemanager_;
-    LogData log_;
+    I2CEventProcessor processor_;
     MainWindow main_window_;
     std::unique_ptr<LiveReceiver> live_receiver_;
 };
