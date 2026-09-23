@@ -87,6 +87,7 @@ void MainWindow::handleArrowKeys(const I2CEventProcessor::Info& info)
 {
     if (info.timestamps.empty() || ImGui::GetIO().WantTextInput)
         return;
+    const auto previous_time = target_time_;
     const auto position = std::ranges::lower_bound(info.timestamps, target_time_);
     auto index = static_cast<std::size_t>(std::distance(info.timestamps.begin(), position));
     index = std::min(index, info.timestamps.size() - 1);
@@ -94,6 +95,8 @@ void MainWindow::handleArrowKeys(const I2CEventProcessor::Info& info)
         target_time_ = info.timestamps[index - 1];
     if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && index + 1 < info.timestamps.size())
         target_time_ = info.timestamps[index + 1];
+    if (target_time_ != previous_time && sync_all_devices_timeline_)
+        scroll_timelines_to_target_ = true;
 }
 
 void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info)
