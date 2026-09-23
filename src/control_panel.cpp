@@ -33,6 +33,7 @@ void ControlPanel::State::resetJumpInput()
 {
     jump_text_.fill('\0');
     jump_initialized_ = false;
+    jump_invalid_ = false;
     previous_format_.reset();
 }
 
@@ -95,17 +96,23 @@ ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager& devicem
         jump_text_.fill('\0');
         std::memcpy(jump_text_.data(), value.data(), std::min(value.size(), jump_text_.size() - 1));
         jump_initialized_ = true;
+        jump_invalid_ = false;
     }
     previous_format_ = format;
     ImGui::SetNextItemWidth(265.0F);
     const bool submitted = ImGui::InputText("Time##JumpTime", jump_text_.data(), jump_text_.size(),
                                             ImGuiInputTextFlags_EnterReturnsTrue);
+    if (ImGui::IsItemEdited())
+        jump_invalid_ = false;
     ImGui::SameLine();
     const bool clicked = ImGui::Button("Go to nearest transaction");
     if (submitted || clicked)
+    {
         result.jump_time = display.parseDisplayed(jump_text_.data(),
                                                     log.timestamps.empty() ? target_time : log.timestamps.front());
-    if ((submitted || clicked) && !result.jump_time)
+        jump_invalid_ = !result.jump_time.has_value();
+    }
+    if (jump_invalid_)
         ImGui::TextColored(ImVec4(1.0F, 0.25F, 0.25F, 1.0F), "Invalid time for selected format");
     ImGui::Checkbox("Sync timeline view positions across windows", &sync_timeline_positions);
     ImGui::End();

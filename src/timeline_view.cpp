@@ -175,19 +175,20 @@ void TimelineView::render(AccessTimeline& timeline, I2CDeviceManager& devicemana
         return;
     }
     bool jump_to_target = false;
-    if (jump_time && !grouped_timeline.empty())
+    if (jump_time && !timeline.empty())
     {
-        const auto next = std::lower_bound(grouped_timeline.begin(), grouped_timeline.end(), *jump_time,
+        // Search individual byte updates, including those inside a transaction.
+        const auto next = std::lower_bound(timeline.begin(), timeline.end(), *jump_time,
                                            [](const auto& row, Timestamp time) { return row.timestamp < time; });
         auto nearest = next;
-        if (next == grouped_timeline.end() ||
-            (next != grouped_timeline.begin() &&
+        if (next == timeline.end() ||
+            (next != timeline.begin() &&
             *jump_time - std::prev(next)->timestamp <= next->timestamp - *jump_time))
             nearest = std::prev(next);
         target_time = nearest->timestamp;
         scroll_all_devices_timeline = true;
         scroll_device_address = nearest->device_address;
-        scroll_history_index = nearest->last_history_index;
+        scroll_history_index = nearest->history_index;
         if (sync_timeline_positions)
             scroll_device_timeline = true;
         for (auto& filter : filters)

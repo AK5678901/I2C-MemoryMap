@@ -144,6 +144,10 @@ std::optional<Timestamp> parseLocal(std::string_view text)
 
 std::optional<Timestamp> TimeValue::DisplayView::parseDisplayed(std::string_view text, Timestamp reference) const
 {
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos)
+        return std::nullopt;
+    text = text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
     switch (format_)
     {
     case DisplayFormat::IsoUtc: return parse(text);
@@ -165,7 +169,9 @@ std::optional<Timestamp> TimeValue::DisplayView::parseDisplayed(std::string_view
     case DisplayFormat::ShortLocal:
     {
         const bool local = format_ == DisplayFormat::ShortLocal;
-        if (text.size() != 18 || text[2] != ':' || text[5] != ':' || text[8] != '.')
+        // Accept whole seconds and 1-9 fractional digits, not only the displayed nine digits.
+        if (text.size() < 8 || text.size() > 18 || text[2] != ':' || text[5] != ':' ||
+            (text.size() > 8 && (text.size() < 10 || text[8] != '.')))
             return std::nullopt;
         const auto reference_text = local ? formatCalendar(reference, true, false) : formatIso(reference);
         const auto reference_day = parse(reference_text.substr(0, 10) + "T00:00:00Z");

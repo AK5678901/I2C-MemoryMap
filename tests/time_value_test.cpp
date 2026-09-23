@@ -42,6 +42,34 @@ int main()
     check(display().parseDisplayed(short_local, *time) == time);
     format = TimeValue::DisplayFormat::ShortUtc;
     check(display().parseDisplayed(display().formatTimestamp(*time), *time) == time);
+    // Jump input accepts byte timestamps at any precision up to nanoseconds.
+    for (const auto short_format : {TimeValue::DisplayFormat::ShortUtc, TimeValue::DisplayFormat::ShortLocal})
+    {
+        format = short_format;
+        const auto selected = display().parseDisplayed("10:25:59.703206056", *time);
+        check(selected.has_value());
+        const auto requested = display().parseDisplayed("10:25:59.54205", *selected);
+        check(requested.has_value());
+        check(*requested == *selected - 161156056);
+        check(display().formatTimestamp(*requested) == "10:25:59.542050000");
+        const auto whole_second = *time - 204048396;
+        const auto prefix = display().formatTimestamp(whole_second).substr(0, 8);
+        check(display().parseDisplayed(prefix, *time) == whole_second);
+        Timestamp fraction = 0;
+        Timestamp scale = 100000000;
+        for (std::size_t count = 1; count <= 9; ++count)
+        {
+            fraction += static_cast<Timestamp>(count) * scale;
+            scale /= 10;
+            const auto input = prefix + "." + std::string("123456789").substr(0, count);
+            check(display().parseDisplayed(input, *time) == whole_second + fraction);
+            check(display().parseDisplayed(" \t" + input + "\r\n", *time) == whole_second + fraction);
+        }
+        for (const auto suffix : {".", ".1234567890", ".123x", ".-1", ".12Z"})
+            check(!display().parseDisplayed(prefix + suffix, *time));
+        check(!display().parseDisplayed("24:00:00.1", *time));
+        check(!display().parseDisplayed(" \t\r\n", *time));
+    }
     format = TimeValue::DisplayFormat::IsoLocal;
     check(display().parseDisplayed(display().formatTimestamp(*time), *time) == time);
     format = TimeValue::DisplayFormat::SinceFirstEvent;

@@ -21,6 +21,7 @@ class State
   private:
     std::array<char, 96> jump_text_{};
     bool jump_initialized_{false};
+    bool jump_invalid_{false};
     std::optional<TimeValue::DisplayFormat> previous_format_;
 };
 }
