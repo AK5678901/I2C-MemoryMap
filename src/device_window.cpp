@@ -379,6 +379,7 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
     static std::map<std::uint8_t, ViewHelpers::TimelineFilters<5>> timeline_filters;
     static std::map<std::uint8_t, bool> group_transactions;
     static std::map<std::uint8_t, float> statistics_heights;
+    static std::map<std::uint8_t, bool> timeline_was_active;
     for (const auto& [address, device] : devicemanager.GetAllDevices())
     {
         const auto position = visibility.find(address);
@@ -430,7 +431,9 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                 }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Timeline"))
+            const bool timeline_active = ImGui::BeginTabItem("Timeline");
+            const bool timeline_just_activated = timeline_active && !timeline_was_active[address];
+            if (timeline_active)
             {
                 auto& grouped = group_transactions.try_emplace(address, false).first->second;
                 ImGui::Checkbox("Group by transaction", &grouped);
@@ -440,12 +443,14 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                 const auto requested_index = scroll_device_timeline && scroll_device_address == address
                                                  ? std::optional<std::size_t>(scroll_snapshot_index)
                                                  : std::nullopt;
+                const bool scroll_to_selected =
+                    scroll_timelines_to_target || (sync_timeline_positions && timeline_just_activated);
                 if (const auto clicked_index =
                         grouped
                             ? renderTransactionTimeline(*device, display, target_time, requested_index,
-                                                        scroll_timelines_to_target, timeline_filters[address])
+                                                        scroll_to_selected, timeline_filters[address])
                             : renderRegisterTimeline(*device, display, target_time, requested_index,
-                                                     scroll_timelines_to_target, timeline_filters[address]);
+                                                     scroll_to_selected, timeline_filters[address]);
                     sync_timeline_positions && clicked_index.has_value())
                 {
                     scroll_all_devices_timeline = true;
@@ -454,6 +459,7 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                 }
                 ImGui::EndTabItem();
             }
+            timeline_was_active[address] = timeline_active;
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
