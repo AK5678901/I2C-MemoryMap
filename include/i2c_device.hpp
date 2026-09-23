@@ -20,9 +20,8 @@ class I2CDevice
         STOP
     };
 
-    struct CommandStat
+    struct RegisterAccessStats
     {
-        std::string command_name;
         uint32_t call_count = 0;
         double min_interval = std::numeric_limits<double>::max();
         double max_interval = 0.0;
@@ -37,8 +36,7 @@ class I2CDevice
         std::optional<double> GetIntervalAt(Timestamp timestamp) const;
     };
 
-    // i2c_device.hpp の RegisterInfo 内に追加するイメージ
-    struct BitFieldInfo
+    struct BitFieldDefinition
     {
         std::string name;
         uint8_t byte_offset;
@@ -47,33 +45,47 @@ class I2CDevice
         bool is_little_endian;
     };
 
-    // 1つのレジスタが持つ情報（名前とデータ）
-    struct RegisterInfo
+    struct RegisterDefinition
     {
-        std::string name = "";
-        std::vector<uint8_t> data_w;
-        std::vector<uint8_t> data_r;
+        std::string name = "-";
+        std::vector<BitFieldDefinition> write_bit_fields;
+        std::vector<BitFieldDefinition> read_bit_fields;
+    };
+
+    struct RegisterValue
+    {
+        std::vector<uint8_t> write_data;
+        std::vector<uint8_t> read_data;
         std::vector<bool> byte_has_written;
         std::vector<bool> byte_has_read;
-        std::vector<BitFieldInfo> bit_fields_write; // write用ビット情報
-        std::vector<BitFieldInfo> bit_fields_read;  // read用ビット情報
     };
 
-    struct SnapshotView
+    struct Register
     {
-        const std::map<uint32_t, RegisterInfo>& registers;
-        bool is_write;
-        uint32_t changed_reg_addr;
-        int32_t changed_index;
+        RegisterDefinition definition;
+        RegisterValue value;
     };
 
-    struct HistoryEntryView
+    // Own the historical value, but share the definition owned by the device's Register.
+    struct RegisterSnapshot
     {
-        Timestamp timestamp;
-        bool is_write;
-        uint32_t register_address;
-        const RegisterInfo& register_info;
-        std::uint64_t segment_id;
+        const RegisterDefinition& definition;
+        RegisterValue value;
+    };
+
+    struct Snapshot
+    {
+        Timestamp timestamp{0};
+        std::map<uint32_t, RegisterSnapshot> registers;
+        bool is_write{false};
+        uint32_t updated_register_address{0};
+        int32_t updated_byte_index{-1};
+        std::uint64_t segment_id{0};
+
+        const RegisterSnapshot& GetUpdatedRegister() const
+        {
+            return registers.at(updated_register_address);
+        }
     };
 
     // 一度設定されたら変わらない値（コンフィグ）
@@ -85,8 +97,7 @@ class I2CDevice
         int reg_addr_bytes;
         bool auto_addr_inc;
         bool support_direct_read_from_default_reg;
-        uint32_t default_reg_addr; // support_direct_read_from_default_reg_が有効の時のみ、STOP conditionでreg_pointer_
-                                   // = default_reg_addr_ となる
+        uint32_t default_reg_addr; // STOP後の直接Readで使用するレジスタアドレス
         uint32_t reg_map_size;
         bool is_little_endian;
     };
@@ -98,40 +109,36 @@ class I2CDevice
     struct State
     {
         I2CBusCondition bus_condition = I2CBusCondition::STOP;
-        uint32_t reg_pointer = 0;
+        uint32_t current_register_address = 0;
         bool is_read = false;
-        int write_data_count = 0;
+        int write_byte_count = 0; // レジスタアドレスのバイトも含む
         std::uint64_t segment_id = 0;
-        bool is_new_register_addr_just_set =
-            false; // コマンドID方式の時(=1つのコマンドIDに複数バイト紐づくとき、コマンド指定後の最初のライトもしくはリードの前に、RegisterInfoのdata_w、data_rをクリアする必要があるため、コマンドID指定直後にフラグを立てる)
+        bool clear_buffer_on_next_data_byte = false;
     } state_;
 
-    // レジスタアドレス毎の統計情報・コマンド名管理用
+    // Register access statistics and bookkeeping for collecting them.
     struct Statistics
     {
-        bool is_stat_counted = false;
-        std::map<uint32_t, std::string> command_names;
-        std::map<uint32_t, CommandStat> write_stats;
-        std::map<uint32_t, CommandStat> read_stats;
+        bool access_recorded = false;
+        std::map<uint32_t, RegisterAccessStats> write_access_stats;
+        std::map<uint32_t, RegisterAccessStats> read_access_stats;
     } stats_;
 
-    // ある時点のレジスタマップ。write用とread用を分けておく
-    std::map<uint32_t, RegisterInfo> registers_;
+    // Registers outlive the snapshots that refer to their definitions.
+    std::map<uint32_t, Register> registers_;
+    Snapshot initial_snapshot_; // 履歴がないときに返す、定義と空の値を持つ初期状態
+    std::vector<Snapshot> snapshots_;
 
-    struct Snapshot
-    {
-        Timestamp timestamp;
-        std::map<uint32_t, RegisterInfo> registers;
-        bool is_write;
-        uint32_t changed_reg_addr;
-        int32_t changed_index;
-        std::uint64_t segment_id;
-    };
-    std::vector<Snapshot> history_;
+    Register& GetOrCreateRegister(uint32_t address);
+    void RecordSnapshot(Timestamp timestamp);
 
   public:
     // コンストラクタが Config を受け取るように変更
     explicit I2CDevice(const Config& config);
+    I2CDevice(const I2CDevice&) = delete;
+    I2CDevice& operator=(const I2CDevice&) = delete;
+    I2CDevice(I2CDevice&&) = delete;
+    I2CDevice& operator=(I2CDevice&&) = delete;
 
     void CallThisEachI2CAddrByteWrite(bool is_read);
     void CallThisEachI2CStopCondition();
@@ -139,34 +146,35 @@ class I2CDevice
     void DataByte(uint8_t data, Timestamp timestamp);
 
     const std::string& GetDeviceName() const noexcept;
-    SnapshotView GetSnapshotViewAt(Timestamp timestamp) const;
-    std::size_t GetHistorySize() const
+    // Snapshot references must be retrieved again after data is appended or reset.
+    const Snapshot& GetSnapshotAt(Timestamp timestamp) const;
+    std::size_t GetSnapshotCount() const
     {
-        return history_.size();
+        return snapshots_.size();
     }
-    HistoryEntryView GetHistoryEntry(std::size_t index) const;
+    const Snapshot& GetSnapshotByIndex(std::size_t index) const;
 
     void SetRegisterName(uint32_t reg_addr, const std::string& name);
     const std::string& GetRegisterName(uint32_t reg_addr) const;
 
-    void SetWriteRegisterBitField(uint32_t reg_addr, const BitFieldInfo& bitfield);
-    void SetReadRegisterBitField(uint32_t reg_addr, const BitFieldInfo& bitfield);
+    void SetWriteRegisterBitField(uint32_t reg_addr, const BitFieldDefinition& bitfield);
+    void SetReadRegisterBitField(uint32_t reg_addr, const BitFieldDefinition& bitfield);
 
-    const std::vector<BitFieldInfo>& GetWriteRegisterBitField(uint32_t reg_addr) const;
-    const std::vector<BitFieldInfo>& GetReadRegisterBitField(uint32_t reg_addr) const;
+    const std::vector<BitFieldDefinition>& GetWriteRegisterBitField(uint32_t reg_addr) const;
+    const std::vector<BitFieldDefinition>& GetReadRegisterBitField(uint32_t reg_addr) const;
 
     int GetRegisterAddressBytes() const
     {
         return config_.reg_addr_bytes;
     }
 
-    const std::map<uint32_t, CommandStat>& GetWriteStats() const
+    const std::map<uint32_t, RegisterAccessStats>& GetWriteStats() const
     {
-        return stats_.write_stats;
+        return stats_.write_access_stats;
     }
-    const std::map<uint32_t, CommandStat>& GetReadStats() const
+    const std::map<uint32_t, RegisterAccessStats>& GetReadStats() const
     {
-        return stats_.read_stats;
+        return stats_.read_access_stats;
     }
 };
 

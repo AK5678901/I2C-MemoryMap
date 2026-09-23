@@ -45,34 +45,34 @@ void setupRegisterTable(const bool registerless)
     ImGui::TableHeadersRow();
 }
 
-void renderRegisterRows(const I2CDevice& device, const I2CDevice::SnapshotView& snapshot, const bool registerless)
+void renderRegisterRows(const I2CDevice::Snapshot& snapshot, const bool registerless)
 {
     for (const auto& [address, info] : snapshot.registers)
     {
-        if (info.data_w.empty() && info.data_r.empty())
+        if (info.value.write_data.empty() && info.value.read_data.empty())
             continue;
         ImGui::TableNextRow();
-        const bool selected = snapshot.changed_reg_addr == address;
+        const bool selected = snapshot.updated_register_address == address;
         if (registerless)
         {
             ImGui::TableSetColumnIndex(0);
             const auto cell_position = ImGui::GetCursorScreenPos();
             ImGui::Selectable("##SnapshotRow", selected, ImGuiSelectableFlags_SpanAllColumns);
             ImGui::SetCursorScreenPos(cell_position);
-            ViewHelpers::renderBytes(info.data_w);
+            ViewHelpers::renderBytes(info.value.write_data);
             ImGui::TableSetColumnIndex(1);
-            ViewHelpers::renderBytes(info.data_r);
+            ViewHelpers::renderBytes(info.value.read_data);
             continue;
         }
         ImGui::TableSetColumnIndex(0);
         const auto address_label = std::format("0x{:04X}##SnapshotRow", address);
         ImGui::Selectable(address_label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns);
         ImGui::TableSetColumnIndex(1);
-        ImGui::TextUnformatted(device.GetRegisterName(address).c_str());
+        ImGui::TextUnformatted(info.definition.name.c_str());
         ImGui::TableSetColumnIndex(2);
-        ViewHelpers::renderBytesWithTooltips(info.data_w, info.bit_fields_write, address, "Write");
+        ViewHelpers::renderBytesWithTooltips(info.value.write_data, info.definition.write_bit_fields, address, "Write");
         ImGui::TableSetColumnIndex(3);
-        ViewHelpers::renderBytesWithTooltips(info.data_r, info.bit_fields_read, address, "Read");
+        ViewHelpers::renderBytesWithTooltips(info.value.read_data, info.definition.read_bit_fields, address, "Read");
     }
 }
 
@@ -83,8 +83,8 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
                                                      ViewHelpers::TimelineFilters<5>& filters)
 {
     std::vector<ViewHelpers::TransactionRow> rows;
-    for (std::size_t index = 0; index < device.GetHistorySize(); ++index)
-        ViewHelpers::appendTransactionByte(rows, 0, index, device.GetHistoryEntry(index));
+    for (std::size_t index = 0; index < device.GetSnapshotCount(); ++index)
+        ViewHelpers::appendTransactionByte(rows, 0, index, device.GetSnapshotByIndex(index));
     ImGui::Text("Transactions: %zu", rows.size());
     if (!ImGui::BeginTable("TransactionTimeline", 5, ViewHelpers::table_flags))
         return std::nullopt;
@@ -121,7 +121,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
     {
         const auto found = std::ranges::find_if(visible_rows, [&](std::size_t index) {
             const auto& row = rows[index];
-            return row.first_history_index <= *requested_index && *requested_index <= row.last_history_index;
+            return row.first_snapshot_index <= *requested_index && *requested_index <= row.last_snapshot_index;
         });
         if (found != visible_rows.end())
             scroll_index = static_cast<std::size_t>(std::distance(visible_rows.begin(), found));
@@ -140,7 +140,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
         {
             const auto& row = rows[visible_rows[*key_index]];
             target_time = row.timestamp;
-            selected_index = row.last_history_index;
+            selected_index = row.last_snapshot_index;
             scroll_index = key_index;
         }
     }
@@ -162,7 +162,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
             if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns))
             {
                 target_time = row.timestamp;
-                selected_index = row.last_history_index;
+                selected_index = row.last_snapshot_index;
             }
             if (scroll_index == static_cast<std::size_t>(index))
                 ImGui::SetScrollHereY(0.5F);
@@ -187,46 +187,46 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
                                                   const bool scroll_to_selected,
                                                   ViewHelpers::TimelineFilters<5>& filters)
 {
-    ImGui::Text("Databytes: %zu", device.GetHistorySize());
+    ImGui::Text("Databytes: %zu", device.GetSnapshotCount());
     if (!ImGui::BeginTable("RegisterTimeline", 5, ViewHelpers::table_flags))
         return std::nullopt;
     ViewHelpers::setupTimelineColumns(display,
-                                      device.GetHistorySize() == 0 ? target_time : device.GetHistoryEntry(0).timestamp,
+                                      device.GetSnapshotCount() == 0 ? target_time : device.GetSnapshotByIndex(0).timestamp,
                                       kTimelineColumns);
     ImGui::TableSetupScrollFreeze(0, 2);
     ImGui::TableHeadersRow();
     const bool filter_changed = ViewHelpers::renderTimelineFilterRow(filters);
 
     std::vector<std::size_t> visible_rows;
-    visible_rows.reserve(device.GetHistorySize());
+    visible_rows.reserve(device.GetSnapshotCount());
     const bool has_filter = std::ranges::any_of(filters, [](const auto& filter) { return filter[0] != '\0'; });
     if (!has_filter)
     {
-        visible_rows.resize(device.GetHistorySize());
+        visible_rows.resize(device.GetSnapshotCount());
         std::iota(visible_rows.begin(), visible_rows.end(), 0);
     }
     else
     {
-        for (std::size_t index = 0; index < device.GetHistorySize(); ++index)
+        for (std::size_t index = 0; index < device.GetSnapshotCount(); ++index)
         {
-            const auto entry = device.GetHistoryEntry(index);
+            const auto& entry = device.GetSnapshotByIndex(index);
             const auto matches = [&](std::size_t column, const std::string& value) {
                 return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
             };
             if ((!filters[0][0] || matches(0, display.formatTimestamp(entry.timestamp))) &&
                 (!filters[1][0] || matches(1, device.GetRegisterAddressBytes() == 0
-                                               ? "-" : std::format("0x{:04X}", entry.register_address))) &&
-                (!filters[2][0] || matches(2, device.GetRegisterName(entry.register_address))) &&
+                                               ? "-" : std::format("0x{:04X}", entry.updated_register_address))) &&
+                (!filters[2][0] || matches(2, device.GetRegisterName(entry.updated_register_address))) &&
                 (!filters[3][0] || matches(3, entry.is_write
-                                               ? ViewHelpers::formatTimelineBytes(entry.register_info.data_w) : "")) &&
+                                               ? ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.write_data) : "")) &&
                 (!filters[4][0] || matches(4, entry.is_write
-                                               ? "" : ViewHelpers::formatTimelineBytes(entry.register_info.data_r))))
+                                               ? "" : ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.read_data))))
                 visible_rows.push_back(index);
         }
     }
     const auto position = std::upper_bound(visible_rows.begin(), visible_rows.end(), target_time,
                                            [&](Timestamp time, std::size_t index) {
-                                               return time < device.GetHistoryEntry(index).timestamp;
+                                               return time < device.GetSnapshotByIndex(index).timestamp;
                                            });
     const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
     if (scroll_index)
@@ -246,7 +246,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
             selected_index = visible_rows[selected_count];
         if (selected_index)
         {
-            target_time = device.GetHistoryEntry(*selected_index).timestamp;
+            target_time = device.GetSnapshotByIndex(*selected_index).timestamp;
             scroll_index = static_cast<std::size_t>(std::distance(
                 visible_rows.begin(), std::ranges::find(visible_rows, *selected_index)));
         }
@@ -260,7 +260,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
     {
         for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index)
         {
-            const auto entry = device.GetHistoryEntry(visible_rows[index]);
+            const auto& entry = device.GetSnapshotByIndex(visible_rows[index]);
             const bool selected = selected_count > 0 && static_cast<std::size_t>(index) == selected_count - 1;
             ImGui::PushID(index);
             ImGui::TableNextRow();
@@ -277,14 +277,14 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
             if (device.GetRegisterAddressBytes() == 0)
                 ImGui::TextUnformatted("-");
             else
-                ImGui::Text("0x%04X", entry.register_address);
+                ImGui::Text("0x%04X", entry.updated_register_address);
             ImGui::TableSetColumnIndex(2);
-            ImGui::TextUnformatted(device.GetRegisterName(entry.register_address).c_str());
+            ImGui::TextUnformatted(device.GetRegisterName(entry.updated_register_address).c_str());
             ImGui::TableSetColumnIndex(entry.is_write ? 3 : 4);
-            const auto& info = entry.register_info;
-            ViewHelpers::renderBytesWithTooltips(entry.is_write ? info.data_w : info.data_r,
-                                                 entry.is_write ? info.bit_fields_write : info.bit_fields_read,
-                                                 entry.register_address, entry.is_write ? "Write" : "Read");
+            const auto& info = entry.GetUpdatedRegister();
+            ViewHelpers::renderBytesWithTooltips(entry.is_write ? info.value.write_data : info.value.read_data,
+                                                 entry.is_write ? info.definition.write_bit_fields : info.definition.read_bit_fields,
+                                                 entry.updated_register_address, entry.is_write ? "Write" : "Read");
             ImGui::PopID();
         }
     }
@@ -292,7 +292,7 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
     return selected_index;
 }
 
-void renderAccessStatRows(const std::map<std::uint32_t, I2CDevice::CommandStat>& stats, const char* direction,
+void renderAccessStatRows(const I2CDevice& device, const std::map<std::uint32_t, I2CDevice::RegisterAccessStats>& stats, const char* direction,
                           const bool registerless, const Timestamp target_time)
 {
     for (const auto& [address, stat] : stats)
@@ -303,7 +303,8 @@ void renderAccessStatRows(const std::map<std::uint32_t, I2CDevice::CommandStat>&
         ImGui::TableSetColumnIndex(0);
         registerless ? ImGui::TextUnformatted("-") : ImGui::Text("0x%04X", address);
         ImGui::TableSetColumnIndex(1);
-        ImGui::TextUnformatted(stat.command_name.empty() ? "-" : stat.command_name.c_str());
+        const auto& name = device.GetRegisterName(address);
+        ImGui::TextUnformatted(name.empty() ? "-" : name.c_str());
         ImGui::TableSetColumnIndex(2);
         ImGui::TextUnformatted(direction);
         const auto current = stat.GetIntervalAt(target_time);
@@ -357,8 +358,8 @@ void renderAccessStatistics(const I2CDevice& device, const Timestamp target_time
             ImGui::SetTooltip("%s", headers[index].tooltip);
     }
     const bool registerless = device.GetRegisterAddressBytes() == 0;
-    renderAccessStatRows(device.GetWriteStats(), "Write", registerless, target_time);
-    renderAccessStatRows(device.GetReadStats(), "Read", registerless, target_time);
+    renderAccessStatRows(device, device.GetWriteStats(), "Write", registerless, target_time);
+    renderAccessStatRows(device, device.GetReadStats(), "Read", registerless, target_time);
     ImGui::EndTable();
 }
 } // namespace
@@ -372,7 +373,7 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                           const TimeValue::DisplayView& display, Timestamp& target_time,
                           const bool sync_timeline_positions,
                           bool& scroll_all_devices_timeline, bool& scroll_device_timeline,
-                          std::uint8_t& scroll_device_address, std::size_t& scroll_history_index,
+                          std::uint8_t& scroll_device_address, std::size_t& scroll_snapshot_index,
                           const bool scroll_timelines_to_target)
 {
     static std::map<std::uint8_t, ViewHelpers::TimelineFilters<5>> timeline_filters;
@@ -418,12 +419,12 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
         {
             if (ImGui::BeginTabItem("Snapshot"))
             {
-                const auto snapshot = device->GetSnapshotViewAt(target_time);
+                const auto& snapshot = device->GetSnapshotAt(target_time);
                 const bool registerless = device->GetRegisterAddressBytes() == 0;
                 if (ImGui::BeginTable("RegisterSnapshot", registerless ? 2 : 4, ViewHelpers::table_flags))
                 {
                     setupRegisterTable(registerless);
-                    renderRegisterRows(*device, snapshot, registerless);
+                    renderRegisterRows(snapshot, registerless);
                     ImGui::EndTable();
                 }
                 ImGui::EndTabItem();
@@ -436,7 +437,7 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                                        ? "Entire log, oldest first. One row per transaction segment.\nClick a row or use Up/Down to select its time."
                                        : "Entire log, oldest first. One row per data-byte update.\nClick a row or use Up/Down to select its time.");
                 const auto requested_index = scroll_device_timeline && scroll_device_address == address
-                                                 ? std::optional<std::size_t>(scroll_history_index)
+                                                 ? std::optional<std::size_t>(scroll_snapshot_index)
                                                  : std::nullopt;
                 if (const auto clicked_index =
                         grouped
@@ -448,7 +449,7 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
                 {
                     scroll_all_devices_timeline = true;
                     scroll_device_address = address;
-                    scroll_history_index = *clicked_index;
+                    scroll_snapshot_index = *clicked_index;
                 }
                 ImGui::EndTabItem();
             }

@@ -64,14 +64,14 @@ void ViewHelpers::setupTimelineColumns(const TimeValue::DisplayView& display, Ti
 
 namespace
 {
-bool containsByte(const std::size_t byte_index, const I2CDevice::BitFieldInfo& field)
+bool containsByte(const std::size_t byte_index, const I2CDevice::BitFieldDefinition& field)
 {
     const std::uint32_t first_byte = field.byte_offset;
     const std::uint32_t last_byte = field.byte_offset + (field.bit_offset + field.bit_width - 1U) / 8U;
     return byte_index >= first_byte && byte_index <= last_byte;
 }
 
-std::uint64_t extractBitFieldValue(const std::vector<std::uint8_t>& data, const I2CDevice::BitFieldInfo& field)
+std::uint64_t extractBitFieldValue(const std::vector<std::uint8_t>& data, const I2CDevice::BitFieldDefinition& field)
 {
     if (!field.is_little_endian)
         throw std::runtime_error("Big endian bitfield parsing is not supported.");
@@ -89,7 +89,7 @@ std::uint64_t extractBitFieldValue(const std::vector<std::uint8_t>& data, const 
 }
 
 void showByteTooltip(const std::vector<std::uint8_t>& data,
-                     const std::vector<I2CDevice::BitFieldInfo>& fields, const std::size_t byte_index,
+                     const std::vector<I2CDevice::BitFieldDefinition>& fields, const std::size_t byte_index,
                      const std::uint32_t register_address, const char* direction)
 {
     if (!ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenOverlappedByItem) ||
@@ -146,22 +146,22 @@ std::string ViewHelpers::formatTimelineBytes(const std::vector<std::uint8_t>& da
 }
 
 void ViewHelpers::appendTransactionByte(std::vector<TransactionRow>& rows, const std::uint8_t device_address,
-                                        const std::size_t history_index, const I2CDevice::HistoryEntryView& entry)
+                                        const std::size_t snapshot_index, const I2CDevice::Snapshot& entry)
 {
-    const auto& data = entry.is_write ? entry.register_info.data_w : entry.register_info.data_r;
+    const auto& data = entry.is_write ? entry.GetUpdatedRegister().value.write_data : entry.GetUpdatedRegister().value.read_data;
     const auto byte = data.back();
     if (!rows.empty() && rows.back().device_address == device_address && rows.back().segment_id == entry.segment_id &&
-        rows.back().last_history_index + 1 == history_index)
+        rows.back().last_snapshot_index + 1 == snapshot_index)
     {
         auto& row = rows.back();
         row.timestamp = entry.timestamp;
-        row.last_history_index = history_index;
-        row.last_register_address = entry.register_address;
+        row.last_snapshot_index = snapshot_index;
+        row.last_register_address = entry.updated_register_address;
         row.bytes.push_back(byte);
         return;
     }
-    rows.push_back({entry.timestamp, entry.timestamp, device_address, history_index, history_index,
-                    entry.register_address, entry.register_address, entry.segment_id, entry.is_write,
+    rows.push_back({entry.timestamp, entry.timestamp, device_address, snapshot_index, snapshot_index,
+                    entry.updated_register_address, entry.updated_register_address, entry.segment_id, entry.is_write,
                     {byte}});
 }
 
@@ -194,7 +194,7 @@ void ViewHelpers::renderBytes(const std::vector<std::uint8_t>& data)
 }
 
 void ViewHelpers::renderBytesWithTooltips(const std::vector<std::uint8_t>& data,
-                                          const std::vector<I2CDevice::BitFieldInfo>& fields,
+                                          const std::vector<I2CDevice::BitFieldDefinition>& fields,
                                           const std::uint32_t register_address, const char* direction)
 {
     for (std::size_t index = 0; index < data.size(); ++index)
@@ -213,11 +213,11 @@ void ViewHelpers::renderTransactionBytesWithTooltips(const TransactionRow& row, 
         if (index > 0)
             ImGui::SameLine(0.0F, 4.0F);
         ImGui::Text("%02X", row.bytes[index]);
-        const auto entry = device.GetHistoryEntry(row.first_history_index + index);
-        const auto& info = entry.register_info;
-        const auto& data = entry.is_write ? info.data_w : info.data_r;
-        const auto& fields = entry.is_write ? info.bit_fields_write : info.bit_fields_read;
-        showByteTooltip(data, fields, data.size() - 1, entry.register_address,
+        const auto& entry = device.GetSnapshotByIndex(row.first_snapshot_index + index);
+        const auto& info = entry.GetUpdatedRegister();
+        const auto& data = entry.is_write ? info.value.write_data : info.value.read_data;
+        const auto& fields = entry.is_write ? info.definition.write_bit_fields : info.definition.read_bit_fields;
+        showByteTooltip(data, fields, data.size() - 1, entry.updated_register_address,
                         entry.is_write ? "Write" : "Read");
     }
 }

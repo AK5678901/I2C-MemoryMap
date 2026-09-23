@@ -19,7 +19,7 @@ Timestamp seconds(double value) { return static_cast<Timestamp>(std::llround(val
 
 int main()
 {
-    I2CDevice::CommandStat stat;
+    I2CDevice::RegisterAccessStats stat;
     check(!stat.GetIntervalAt(seconds(100)));
     stat.RecordAccess(seconds(1));
     check(stat.intervals.empty());
@@ -39,7 +39,7 @@ int main()
     checkNear(stat.GetIntervalAt(seconds(100)).value(), 4);
     checkNear(stat.GetIntervalAt(seconds(3)).value(), 2); // Scrubbing backwards must not retain a future value.
 
-    I2CDevice::CommandStat equal_times;
+    I2CDevice::RegisterAccessStats equal_times;
     equal_times.RecordAccess(seconds(0));
     equal_times.RecordAccess(seconds(0));
     checkNear(equal_times.GetIntervalAt(seconds(0)).value(), 0);

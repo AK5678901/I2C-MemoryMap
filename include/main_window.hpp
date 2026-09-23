@@ -34,5 +34,5 @@ class MainWindow final
     bool scroll_device_timeline_{false};
     bool scroll_timelines_to_target_{false};
     uint8_t scroll_device_address_{0};
-    std::size_t scroll_history_index_{0};
+    std::size_t scroll_snapshot_index_{0};
 };

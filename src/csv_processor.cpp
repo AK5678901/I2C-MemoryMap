@@ -139,9 +139,9 @@ LogData importCsvLog(I2CDeviceManager& devicemanager, const std::filesystem::pat
     std::set<Timestamp> unique_timestamps;
     for (const auto& [address, device] : devicemanager.GetAllDevices())
     {
-        for (std::size_t index = 0; index < device->GetHistorySize(); ++index)
+        for (std::size_t index = 0; index < device->GetSnapshotCount(); ++index)
         {
-            const auto timestamp = device->GetHistoryEntry(index).timestamp;
+            const auto& timestamp = device->GetSnapshotByIndex(index).timestamp;
             unique_timestamps.insert(timestamp);
             log.max_timestamp = std::max(log.max_timestamp, timestamp);
             log.min_timestamp = std::min(log.min_timestamp, timestamp);

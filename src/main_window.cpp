@@ -125,7 +125,7 @@ void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const L
             ImGui::Checkbox("##Visible", &visible);
             ImGui::SameLine();
             ImGui::Text("0x%02X  %s", address, device->GetDeviceName().c_str());
-            if (device->GetHistorySize() == 0)
+            if (device->GetSnapshotCount() == 0)
             {
                 ImGui::SameLine();
                 ImGui::TextDisabled("(no data)");
@@ -178,10 +178,10 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const LogData& log, con
     renderDeviceList(devicemanager, log);
     TimelineView::render(access_timeline_, devicemanager, time_display, target_time_, sync_all_devices_timeline_,
                          scroll_all_devices_timeline_, scroll_device_timeline_, scroll_device_address_,
-                         scroll_history_index_, scroll_timelines_to_target_, control_result.jump_time);
+                         scroll_snapshot_index_, scroll_timelines_to_target_, control_result.jump_time);
     DeviceWindow::render(devicemanager, device_visibility_, time_display, target_time_, sync_all_devices_timeline_,
                          scroll_all_devices_timeline_, scroll_device_timeline_, scroll_device_address_,
-                         scroll_history_index_, scroll_timelines_to_target_);
+                         scroll_snapshot_index_, scroll_timelines_to_target_);
     scroll_device_timeline_ = false;
     scroll_timelines_to_target_ = false;
     first_layout_ = false;

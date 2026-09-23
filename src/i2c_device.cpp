@@ -7,7 +7,7 @@
 #include <string>
 #include <utility>
 
-void I2CDevice::CommandStat::RecordAccess(Timestamp timestamp)
+void I2CDevice::RegisterAccessStats::RecordAccess(Timestamp timestamp)
 {
     if (call_count > 0)
     {
@@ -25,7 +25,7 @@ void I2CDevice::CommandStat::RecordAccess(Timestamp timestamp)
     access_timestamps.push_back(timestamp);
 }
 
-std::optional<double> I2CDevice::CommandStat::GetIntervalAt(Timestamp timestamp) const
+std::optional<double> I2CDevice::RegisterAccessStats::GetIntervalAt(Timestamp timestamp) const
 {
     const auto position = std::upper_bound(access_timestamps.begin(), access_timestamps.end(), timestamp);
     const auto count = static_cast<std::size_t>(std::distance(access_timestamps.begin(), position));
@@ -34,7 +34,7 @@ std::optional<double> I2CDevice::CommandStat::GetIntervalAt(Timestamp timestamp)
     return intervals[count - 2];
 }
 
-double I2CDevice::CommandStat::GetIntervalStdDev() const
+double I2CDevice::RegisterAccessStats::GetIntervalStdDev() const
 {
     // Population standard deviation over all observed intervals.
     return intervals.empty() ? 0.0 : std::sqrt(std::max(0.0, interval_m2 / static_cast<double>(intervals.size())));
@@ -66,21 +66,21 @@ void I2CDevice::CallThisEachI2CAddrByteWrite(bool is_read)
     }
 
     state_.is_read = is_read;
-    state_.write_data_count = 0;
+    state_.write_byte_count = 0;
 
     // Register
     // Address毎の統計情報集計用。1回のI2Cデバイスアドレスのアクセスにつき1回だけカウントするため、フラグをクリア
-    stats_.is_stat_counted = false;
+    stats_.access_recorded = false;
 
     // レジスタ値をクリアする条件1
     // レジスタアドレスのライト無しでいきなりリードされたときに、特定のレジスタアドレスの値を返すデバイスの処理
     if (state_.is_read && config_.support_direct_read_from_default_reg &&
         (state_.bus_condition == I2CBusCondition::START_Standard))
     {
-        state_.reg_pointer = config_.default_reg_addr;
-        auto& reg_info = registers_[state_.reg_pointer];
-        reg_info.data_r.clear();
-        reg_info.byte_has_read.clear();
+        state_.current_register_address = config_.default_reg_addr;
+        auto& value = GetOrCreateRegister(state_.current_register_address).value;
+        value.read_data.clear();
+        value.byte_has_read.clear();
     }
 
     // レジスタ値をクリアする条件2
@@ -88,17 +88,17 @@ void I2CDevice::CallThisEachI2CAddrByteWrite(bool is_read)
     // 新しいトランザクション開始時にデータをクリアする
     if (config_.reg_addr_bytes == 0)
     {
-        state_.reg_pointer = 0;
-        auto& reg_info = registers_[0];
+        state_.current_register_address = 0;
+        auto& value = GetOrCreateRegister(0).value;
         if (is_read)
         {
-            reg_info.data_r.clear();
-            reg_info.byte_has_read.clear();
+            value.read_data.clear();
+            value.byte_has_read.clear();
         }
         else
         {
-            reg_info.data_w.clear();
-            reg_info.byte_has_written.clear();
+            value.write_data.clear();
+            value.byte_has_written.clear();
         }
     }
 }
@@ -111,22 +111,14 @@ void I2CDevice::CallThisEachI2CStopCondition()
 void I2CDevice::ResetRuntime()
 {
     state_ = State{};
-    history_.clear();
-    history_.shrink_to_fit();
-    for (auto& [address, info] : registers_)
-    {
-        std::vector<std::uint8_t>{}.swap(info.data_w);
-        std::vector<std::uint8_t>{}.swap(info.data_r);
-        std::vector<bool>{}.swap(info.byte_has_written);
-        std::vector<bool>{}.swap(info.byte_has_read);
-    }
-    auto names = std::move(stats_.command_names);
+    snapshots_.clear();
+    snapshots_.shrink_to_fit();
     stats_ = Statistics{};
-    stats_.command_names = std::move(names);
-    for (const auto& [address, name] : stats_.command_names)
+    for (auto& [address, reg] : registers_)
     {
-        stats_.write_stats[address].command_name = name;
-        stats_.read_stats[address].command_name = name;
+        reg.value = RegisterValue{};
+        stats_.write_access_stats.try_emplace(address);
+        stats_.read_access_stats.try_emplace(address);
     }
 }
 
@@ -137,118 +129,117 @@ void I2CDevice::DataByte(uint8_t data, Timestamp timestamp)
     // アドレス幅が0（レジスタレス）の場合の処理。ライト、リード兼用
     if (config_.reg_addr_bytes == 0)
     {
-        state_.reg_pointer = 0;
-        auto& reg_info = registers_[state_.reg_pointer];
+        state_.current_register_address = 0;
+        auto& value = GetOrCreateRegister(state_.current_register_address).value;
 
-        if (!stats_.is_stat_counted)
+        if (!stats_.access_recorded)
         {
-            auto& stat = state_.is_read ? stats_.read_stats[0] : stats_.write_stats[0];
+            auto& stat = state_.is_read ? stats_.read_access_stats[0] : stats_.write_access_stats[0];
             stat.RecordAccess(timestamp);
-            stats_.is_stat_counted = true;
+            stats_.access_recorded = true;
         }
 
         if (state_.is_read)
         {
-            reg_info.data_r.push_back(data);
-            reg_info.byte_has_read.push_back(true);
+            value.read_data.push_back(data);
+            value.byte_has_read.push_back(true);
         }
         else
         {
-            reg_info.data_w.push_back(data);
-            reg_info.byte_has_written.push_back(true);
+            value.write_data.push_back(data);
+            value.byte_has_written.push_back(true);
         }
-        history_.push_back({timestamp, registers_, !state_.is_read, state_.reg_pointer, 0, state_.segment_id});
+        RecordSnapshot(timestamp);
         return;
     }
 
     if (state_.is_read)
     {
         // Register Address毎の統計情報集計用
-        // 既にreg_pointer_は構築されているので、リードカウントを上げる
-        if (!stats_.is_stat_counted)
+        // レジスタアドレスは確定済みなので、リードカウントを上げる
+        if (!stats_.access_recorded)
         {
-            auto& stat = stats_.read_stats[state_.reg_pointer];
+            auto& stat = stats_.read_access_stats[state_.current_register_address];
             stat.RecordAccess(timestamp);
-            stats_.is_stat_counted = true;
+            stats_.access_recorded = true;
         }
 
-        auto& reg_info = registers_[state_.reg_pointer];
+        auto& value = GetOrCreateRegister(state_.current_register_address).value;
         // レジスタ値をクリアする条件3
         // レジスタアドレス書き込み直後のデータなので、過去のデータをクリアする
-        if (state_.is_new_register_addr_just_set)
+        if (state_.clear_buffer_on_next_data_byte)
         {
-            reg_info.data_r.clear();
-            reg_info.byte_has_read.clear();
-            state_.is_new_register_addr_just_set = false;
+            value.read_data.clear();
+            value.byte_has_read.clear();
+            state_.clear_buffer_on_next_data_byte = false;
         }
 
-        reg_info.data_r.push_back(data);
-        reg_info.byte_has_read.push_back(true);
-        history_.push_back({timestamp, registers_, false, state_.reg_pointer, 0, state_.segment_id});
+        value.read_data.push_back(data);
+        value.byte_has_read.push_back(true);
+        RecordSnapshot(timestamp);
 
         // オートインクリメントがONの時だけレジスタアドレスをインクリメントする
         if (config_.auto_addr_inc)
         {
-            state_.reg_pointer++;
+            state_.current_register_address++;
             // レジスタアドレスが新しくなったので、フラグ立てて次の連続ライトの場合でも古いデータが消えるようにする
-            state_.is_new_register_addr_just_set = true;
+            state_.clear_buffer_on_next_data_byte = true;
         }
     }
     else
     {
         // Write時の処理
         // 1個目のライトデータの場合はI2Cアドレスバイト確定なのでポインタをクリア
-        if (state_.write_data_count == 0)
+        if (state_.write_byte_count == 0)
         {
-            state_.reg_pointer = 0;
+            state_.current_register_address = 0;
         }
 
         // レジスタアドレス幅分のライトは、レジスタアドレスの書き込みとして扱う
-        if (state_.write_data_count < config_.reg_addr_bytes)
+        if (state_.write_byte_count < config_.reg_addr_bytes)
         {
-            state_.reg_pointer = (state_.reg_pointer << 8) + data;
+            state_.current_register_address = (state_.current_register_address << 8) + data;
         }
         else
         {
             // それ以上のデータ書き込みは、本当のデータとして扱う
 
             // Register Address毎の統計情報集計用
-            // 既にreg_pointer_は構築されているので、ライトカウントを上げる
-            if (!stats_.is_stat_counted)
+            // レジスタアドレスは確定済みなので、ライトカウントを上げる
+            if (!stats_.access_recorded)
             {
-                auto& stat = stats_.write_stats[state_.reg_pointer];
+                auto& stat = stats_.write_access_stats[state_.current_register_address];
                 stat.RecordAccess(timestamp);
-                stats_.is_stat_counted = true;
+                stats_.access_recorded = true;
             }
 
-            auto& reg_info = registers_[state_.reg_pointer];
+            auto& value = GetOrCreateRegister(state_.current_register_address).value;
 
             // レジスタ値をクリアする条件4
             // レジスタアドレス書き込み直後のデータなので、過去のデータをクリアする
-            if (state_.is_new_register_addr_just_set)
+            if (state_.clear_buffer_on_next_data_byte)
             {
-                reg_info.data_w.clear();
-                reg_info.byte_has_written.clear();
-                state_.is_new_register_addr_just_set = false;
+                value.write_data.clear();
+                value.byte_has_written.clear();
+                state_.clear_buffer_on_next_data_byte = false;
             }
-            reg_info.data_w.push_back(data);
-            reg_info.byte_has_written.push_back(true);
-            history_.push_back({timestamp, registers_, true, state_.reg_pointer, 0, state_.segment_id});
+            value.write_data.push_back(data);
+            value.byte_has_written.push_back(true);
+            RecordSnapshot(timestamp);
 
             // オートインクリメントがONの時だけレジスタアドレスをインクリメントする
             if (config_.auto_addr_inc)
             {
-                state_.reg_pointer++;
+                state_.current_register_address++;
                 // レジスタアドレスが新しくなったので、フラグ立てて次の連続ライトの場合でも古いデータが消えるようにする
-                state_.is_new_register_addr_just_set = true;
+                state_.clear_buffer_on_next_data_byte = true;
             }
         }
-        state_.write_data_count++;
+        state_.write_byte_count++;
 
-        state_.is_new_register_addr_just_set =
-            (state_.write_data_count ==
-             config_
-                 .reg_addr_bytes); // コマンドID方式の時(=1つのコマンドIDに複数バイト紐づくとき、コマンド指定後の最初のライトもしくはリードの前に、RegisterInfoのdata_w、data_rをクリアする必要があるため、コマンドID指定直後にフラグを立てる)
+        // アドレス確定後の最初のデータで、以前のWriteまたはReadバッファをクリアする。
+        state_.clear_buffer_on_next_data_byte =
+            (state_.write_byte_count == config_.reg_addr_bytes);
     }
 }
 
@@ -257,84 +248,79 @@ const std::string& I2CDevice::GetDeviceName() const noexcept
     return config_.device_name;
 }
 
-// 指定時刻以下の最新のスナップショットを取得
-I2CDevice::SnapshotView I2CDevice::GetSnapshotViewAt(Timestamp timestamp) const
+I2CDevice::Register& I2CDevice::GetOrCreateRegister(uint32_t address)
 {
-    static const std::map<uint32_t, RegisterInfo> empty_registers;
-
-    // 履歴がない場合は現在のマップを返す
-    if (history_.empty())
-        return SnapshotView{registers_, false, 0, -1};
-
-    // 指定時刻「以下」の要素のうち、最も右側（時刻が一番大きいもの＝直近のもの）を探す
-    auto it = std::upper_bound(history_.begin(), history_.end(), timestamp,
-                               [](Timestamp t, const Snapshot& s) { return t < s.timestamp; });
-
-    // もし指定時刻が「最初の履歴の時刻」よりも前なら、初期状態（まっさらな状態）を返す
-    if (it == history_.begin())
-    {
-        return SnapshotView{empty_registers, false, 0, -1};
-    }
-
-    // it が指すのは「timestamp を超える最初の要素」なので、
-    // その 1つ手前 (`std::prev(it)`) が「timestamp 以下の最新の変更」になる
-    const auto& view = std::prev(it);
-    return SnapshotView{view->registers, view->is_write, view->changed_reg_addr, view->changed_index};
+    auto [position, inserted] = registers_.try_emplace(address);
+    auto& reg = position->second;
+    if (inserted)
+        initial_snapshot_.registers.emplace(address, RegisterSnapshot{reg.definition, reg.value});
+    return reg;
 }
 
-I2CDevice::HistoryEntryView I2CDevice::GetHistoryEntry(std::size_t index) const
+void I2CDevice::RecordSnapshot(Timestamp timestamp)
 {
-    const auto& entry = history_.at(index);
-    return {entry.timestamp, entry.is_write, entry.changed_reg_addr, entry.registers.at(entry.changed_reg_addr),
-            entry.segment_id};
+    Snapshot snapshot;
+    snapshot.timestamp = timestamp;
+    snapshot.is_write = !state_.is_read;
+    snapshot.updated_register_address = state_.current_register_address;
+    snapshot.segment_id = state_.segment_id;
+    for (const auto& [address, reg] : registers_)
+        snapshot.registers.emplace(address, RegisterSnapshot{reg.definition, reg.value});
+    const auto& value = snapshot.GetUpdatedRegister().value;
+    const auto& data = snapshot.is_write ? value.write_data : value.read_data;
+    snapshot.updated_byte_index = static_cast<int32_t>(data.size() - 1);
+    snapshots_.push_back(std::move(snapshot));
 }
 
-void I2CDevice::SetRegisterName(uint32_t reg_addr, const std::string& name)
+const I2CDevice::Snapshot& I2CDevice::GetSnapshotAt(Timestamp timestamp) const
 {
-    stats_.command_names[reg_addr] = name;
-    stats_.write_stats[reg_addr].command_name = name;
-    stats_.read_stats[reg_addr].command_name = name;
-    registers_[reg_addr].name = name;
+    static const Snapshot empty_snapshot;
+    if (snapshots_.empty())
+        return initial_snapshot_;
+    const auto position = std::upper_bound(snapshots_.begin(), snapshots_.end(), timestamp,
+        [](Timestamp time, const Snapshot& snapshot) { return time < snapshot.timestamp; });
+    return position == snapshots_.begin() ? empty_snapshot : *std::prev(position);
 }
 
-const std::string& I2CDevice::GetRegisterName(uint32_t reg_addr) const
+const I2CDevice::Snapshot& I2CDevice::GetSnapshotByIndex(std::size_t index) const
+{
+    return snapshots_.at(index);
+}
+
+void I2CDevice::SetRegisterName(uint32_t address, const std::string& name)
+{
+    GetOrCreateRegister(address).definition.name = name;
+    stats_.write_access_stats.try_emplace(address);
+    stats_.read_access_stats.try_emplace(address);
+}
+
+const std::string& I2CDevice::GetRegisterName(uint32_t address) const
 {
     static const std::string unknown_name = "-";
-    if (stats_.command_names.contains(reg_addr))
-    {
-        return stats_.command_names.at(reg_addr);
-    }
-    return unknown_name;
+    const auto found = registers_.find(address);
+    return found != registers_.end() ? found->second.definition.name : unknown_name;
 }
 
-void I2CDevice::SetWriteRegisterBitField(uint32_t reg_addr, const BitFieldInfo& bitfield)
+void I2CDevice::SetWriteRegisterBitField(uint32_t address, const BitFieldDefinition& bitfield)
 {
-    registers_[reg_addr].bit_fields_write.push_back(bitfield);
+    GetOrCreateRegister(address).definition.write_bit_fields.push_back(bitfield);
 }
 
-void I2CDevice::SetReadRegisterBitField(uint32_t reg_addr, const BitFieldInfo& bitfield)
+void I2CDevice::SetReadRegisterBitField(uint32_t address, const BitFieldDefinition& bitfield)
 {
-    registers_[reg_addr].bit_fields_read.push_back(bitfield);
+    GetOrCreateRegister(address).definition.read_bit_fields.push_back(bitfield);
 }
 
-const std::vector<I2CDevice::BitFieldInfo>& I2CDevice::GetWriteRegisterBitField(uint32_t reg_addr) const
+const std::vector<I2CDevice::BitFieldDefinition>& I2CDevice::GetWriteRegisterBitField(uint32_t address) const
 {
-    static const std::vector<BitFieldInfo> empty_fields;
-    auto it = registers_.find(reg_addr);
-    if (it != registers_.end())
-    {
-        return it->second.bit_fields_write;
-    }
-    return empty_fields;
+    static const std::vector<BitFieldDefinition> empty_fields;
+    const auto found = registers_.find(address);
+    return found != registers_.end() ? found->second.definition.write_bit_fields : empty_fields;
 }
 
-const std::vector<I2CDevice::BitFieldInfo>& I2CDevice::GetReadRegisterBitField(uint32_t reg_addr) const
+const std::vector<I2CDevice::BitFieldDefinition>& I2CDevice::GetReadRegisterBitField(uint32_t address) const
 {
-    static const std::vector<BitFieldInfo> empty_fields;
-    auto it = registers_.find(reg_addr);
-    if (it != registers_.end())
-    {
-        return it->second.bit_fields_read;
-    }
-    return empty_fields;
+    static const std::vector<BitFieldDefinition> empty_fields;
+    const auto found = registers_.find(address);
+    return found != registers_.end() ? found->second.definition.read_bit_fields : empty_fields;
 }

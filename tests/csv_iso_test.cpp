@@ -21,7 +21,7 @@ int main()
     const auto expected = TimeValue::parse("2026-09-22T08:20:18.204048600+00:00");
     const auto* device = devices.GetDevice(0x50);
     if (!expected || !device || log.timestamps.size() != 1 || log.timestamps.front() != *expected ||
-        device->GetHistorySize() != 1 || device->GetHistoryEntry(0).timestamp != *expected ||
+        device->GetSnapshotCount() != 1 || device->GetSnapshotByIndex(0).timestamp != *expected ||
         !log.has_csv_timestamps ||
         log.raw_csv_timestamps.at(*expected) != "2026-09-22T08:20:18.204048600+00:00")
         throw std::runtime_error("ISO CSV import failed");

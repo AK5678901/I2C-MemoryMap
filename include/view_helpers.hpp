@@ -45,8 +45,8 @@ struct TransactionRow
     Timestamp first_timestamp;
     Timestamp timestamp;
     std::uint8_t device_address;
-    std::size_t first_history_index;
-    std::size_t last_history_index;
+    std::size_t first_snapshot_index;
+    std::size_t last_snapshot_index;
     std::uint32_t first_register_address;
     std::uint32_t last_register_address;
     std::uint64_t segment_id;
@@ -55,7 +55,7 @@ struct TransactionRow
 };
 
 void appendTransactionByte(std::vector<TransactionRow>& rows, std::uint8_t device_address,
-                           std::size_t history_index, const I2CDevice::HistoryEntryView& entry);
+                           std::size_t snapshot_index, const I2CDevice::Snapshot& entry);
 std::string formatTransactionRegister(const TransactionRow& row, bool registerless);
 void renderTransactionBytesWithTooltips(const TransactionRow& row, const I2CDevice& device);
 
@@ -70,6 +70,6 @@ void setupTimelineColumns(const TimeValue::DisplayView& display, Timestamp sampl
                           std::span<const TimelineColumn> other_columns);
 void renderBytes(const std::vector<std::uint8_t>& data);
 void renderBytesWithTooltips(const std::vector<std::uint8_t>& data,
-                             const std::vector<I2CDevice::BitFieldInfo>& fields,
+                             const std::vector<I2CDevice::BitFieldDefinition>& fields,
                              std::uint32_t register_address, const char* direction);
 } // namespace ViewHelpers

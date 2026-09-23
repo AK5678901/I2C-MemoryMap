@@ -10,7 +10,7 @@
 namespace
 {
 using Json = nlohmann::json;
-using RegisterBitFieldSetter = void (I2CDevice::*)(std::uint32_t, const I2CDevice::BitFieldInfo&);
+using RegisterBitFieldSetter = void (I2CDevice::*)(std::uint32_t, const I2CDevice::BitFieldDefinition&);
 
 void registerBitFields(I2CDevice& device, const Json& register_json, const std::string& key,
                        const std::uint32_t register_address, const bool is_little_endian,
@@ -23,7 +23,7 @@ void registerBitFields(I2CDevice& device, const Json& register_json, const std::
 
     for (const auto& bit : register_json[key])
     {
-        I2CDevice::BitFieldInfo bitfield{
+        I2CDevice::BitFieldDefinition bitfield{
             .name = bit.value("name", "UNKNOWN"),
             .byte_offset = static_cast<std::uint8_t>(bit.value("byte_offset", 0)),
             .bit_offset = static_cast<std::uint8_t>(bit.value("bit_offset", 0)),
