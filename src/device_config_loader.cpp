@@ -93,12 +93,17 @@ void registerDevices(I2CDeviceManager& devicemanager, const Json& root)
 
 bool loadDeviceConfigs(I2CDeviceManager& devicemanager, const std::filesystem::path& directory)
 {
-    if (!std::filesystem::exists(directory) || !std::filesystem::is_directory(directory))
+    if (!std::filesystem::exists(directory))
+    {
+        return true;
+    }
+    if (!std::filesystem::is_directory(directory))
     {
         std::cerr << "Config directory not found: " << directory.string() << '\n';
         return false;
     }
 
+    bool found_any = false;
     bool loaded_any = false;
     for (const auto& entry : std::filesystem::directory_iterator(directory))
     {
@@ -107,6 +112,7 @@ bool loadDeviceConfigs(I2CDeviceManager& devicemanager, const std::filesystem::p
             continue;
         }
 
+        found_any = true;
         std::ifstream file(entry.path());
         if (!file)
         {
@@ -128,9 +134,9 @@ bool loadDeviceConfigs(I2CDeviceManager& devicemanager, const std::filesystem::p
         }
     }
 
-    if (!loaded_any)
+    if (found_any && !loaded_any)
     {
         std::cerr << "No valid JSON config files found in 'devices' directory.\n";
     }
-    return loaded_any;
+    return !found_any || loaded_any;
 }

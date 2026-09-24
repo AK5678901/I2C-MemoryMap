@@ -42,7 +42,8 @@ if exist "%ResourcesDir%" (
 
 if exist "%LiveBridgeDir%" (
     echo -^> Copying Logic 2 live bridge...
-    xcopy /s /e /y "%LiveBridgeDir%\*" "%PackageDir%\saleae-live\" > nul
+    robocopy "%LiveBridgeDir%" "%PackageDir%\saleae-live" /e /xd __pycache__ /r:0 /w:0 > nul
+    if errorlevel 8 goto :error
 )
 
 :: 6. README.md ‚ÌƒRƒs[
