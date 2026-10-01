@@ -417,21 +417,22 @@ void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t
             }
             if (ImGui::BeginTabItem("Timeline"))
             {
-                ImGui::Checkbox("Group by transaction", &state.group_transactions);
+                const bool grouping_changed = ImGui::Checkbox("Group by transaction", &state.group_transactions);
                 ImGui::TextWrapped(state.group_transactions
                                        ? "Entire log, oldest first. One row per transaction segment.\nClick a row or use Up/Down to select its time."
                                        : "Entire log, oldest first. One row per data-byte update.\nClick a row or use Up/Down to select its time.");
                 const bool sync_pending = sync.enabled() && state.applied_revision != sync.revision();
-                const auto requested_index = sync_pending && sync.position().snapshot &&
+                const bool scroll_to_selected = grouping_changed || sync_pending;
+                const auto requested_index = scroll_to_selected && sync.position().snapshot &&
                                                      sync.position().snapshot->device_address == address
                                                  ? std::optional<std::size_t>(sync.position().snapshot->snapshot_index)
                                                  : std::nullopt;
                 if (const auto clicked_index =
                         state.group_transactions
                             ? renderTransactionTimeline(*device, display, target_time, requested_index,
-                                                        sync_pending, state.timeline_filters)
+                                                        scroll_to_selected, state.timeline_filters)
                             : renderRegisterTimeline(*device, display, target_time, requested_index,
-                                                     sync_pending, state.timeline_filters);
+                                                     scroll_to_selected, state.timeline_filters);
                     clicked_index.has_value())
                     sync.selectSnapshot(device->GetSnapshotByIndex(*clicked_index).timestamp,
                                         address, *clicked_index);

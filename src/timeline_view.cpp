@@ -20,7 +20,7 @@ constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"I2C Address", 80.0
 
 void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2CDeviceManager& devicemanager,
                         const TimeValue::DisplayView& display, TimelineSyncState& sync,
-                        const bool sync_pending, const bool jump_to_target,
+                        const bool scroll_to_selected, const bool jump_to_target,
                         ViewHelpers::TimelineFilters<7>& filters)
 {
     const auto target_time = sync.position().time;
@@ -60,7 +60,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
                                            });
     const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
     std::optional<std::size_t> scroll_index;
-    if (sync_pending && sync.position().snapshot)
+    if (scroll_to_selected && sync.position().snapshot)
     {
         const auto target = *sync.position().snapshot;
         const auto found = std::ranges::find_if(visible_rows, [&](std::size_t index) {
@@ -71,7 +71,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
         if (found != visible_rows.end())
             scroll_index = static_cast<std::size_t>(std::distance(visible_rows.begin(), found));
     }
-    if (!scroll_index && (sync_pending || jump_to_target || filter_changed) && selected_count > 0)
+    if (!scroll_index && (scroll_to_selected || jump_to_target || filter_changed) && selected_count > 0)
         scroll_index = selected_count - 1;
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput)
     {
@@ -169,14 +169,15 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
             filter[0] = '\0';
         jump_to_target = true;
     }
-    ImGui::Checkbox("Group by transaction", &state.group_transactions);
+    const bool grouping_changed = ImGui::Checkbox("Group by transaction", &state.group_transactions);
     ImGui::TextWrapped(state.group_transactions
                            ? "All devices, oldest first. One row per transaction segment.\nClick a row or use Up/Down to select its time."
                            : "All devices, oldest first. One row per data-byte update.\nClick a row or use Up/Down to select its time.");
     const bool sync_pending = sync.enabled() && state.applied_revision != sync.revision();
+    const bool scroll_to_selected = grouping_changed || sync_pending;
     if (state.group_transactions)
     {
-        renderTransactions(state.grouped_timeline, devicemanager, display, sync, sync_pending,
+        renderTransactions(state.grouped_timeline, devicemanager, display, sync, scroll_to_selected,
                            jump_to_target, state.filters);
         state.applied_revision = sync.revision();
         ImGui::End();
@@ -228,7 +229,7 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
                                                });
         const auto selected_count = static_cast<std::size_t>(std::distance(visible_rows.begin(), position));
         std::optional<std::size_t> scroll_index;
-        if (sync_pending && sync.position().snapshot)
+        if (scroll_to_selected && sync.position().snapshot)
         {
             const auto target = *sync.position().snapshot;
             const auto scroll_row = std::ranges::find_if(visible_rows, [&](std::size_t index) {
@@ -238,7 +239,7 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
             if (scroll_row != visible_rows.end())
                 scroll_index = static_cast<std::size_t>(std::distance(visible_rows.begin(), scroll_row));
         }
-        if (!scroll_index.has_value() && (sync_pending || jump_to_target || filter_changed) && selected_count > 0)
+        if (!scroll_index.has_value() && (scroll_to_selected || jump_to_target || filter_changed) && selected_count > 0)
             scroll_index = selected_count - 1;
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput)
         {
