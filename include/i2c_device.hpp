@@ -64,6 +64,8 @@ class I2CDevice
     {
         RegisterDefinition definition;
         RegisterValue value;
+        std::size_t first_snapshot = 0;
+        std::vector<std::size_t> update_snapshot_indices;
     };
 
     // Own the historical value, but share the definition owned by the device's Register.
@@ -128,6 +130,9 @@ class I2CDevice
     std::map<uint32_t, Register> registers_;
     Snapshot initial_snapshot_; // 履歴がないときに返す、定義と空の値を持つ初期状態
     std::vector<Snapshot> snapshots_;
+    std::set<uint32_t> dirty_registers_; // 前回の履歴保存から値が変わり、次に保存する必要があるレジスタのアドレスを集めます。set なので同じアドレスを複数回追加しても重複しません
+    mutable Snapshot materialized_snapshot_; // 画面表示用に復元した「選択時点の全レジスタ状態」を1つ保持します。これがキャッシュ本体です
+    mutable std::optional<std::size_t> materialized_index_; // そのキャッシュが何番の履歴に対応しているかを持ちます。optional なので「まだ有効なキャッシュがない」という状態も表せます
 
     Register& GetOrCreateRegister(uint32_t address);
     void RecordSnapshot(Timestamp timestamp);
@@ -146,12 +151,13 @@ class I2CDevice
     void DataByte(uint8_t data, Timestamp timestamp);
 
     const std::string& GetDeviceName() const noexcept;
-    // Snapshot references must be retrieved again after data is appended or reset.
+    // Full register state, cached until another time is requested, data is appended, or reset.
     const Snapshot& GetSnapshotAt(Timestamp timestamp) const;
     std::size_t GetSnapshotCount() const
     {
         return snapshots_.size();
     }
+    // Timeline entries contain only registers changed since the preceding entry.
     const Snapshot& GetSnapshotByIndex(std::size_t index) const;
 
     void SetRegisterName(uint32_t reg_addr, const std::string& name);

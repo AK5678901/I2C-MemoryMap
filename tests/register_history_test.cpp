@@ -61,8 +61,8 @@ int main()
             check(device.GetSnapshotAt(seconds(1) / 2).registers.empty());
             check(device.GetSnapshotAt(seconds(1)).registers.at(0).value.write_data == first.GetUpdatedRegister().value.write_data);
             check(!device.GetSnapshotAt(seconds(3)).is_write);
-            check(&device.GetSnapshotAt(seconds(3)) == &fourth);
-            check(&device.GetSnapshotAt(seconds(1)) == &first);
+            check(device.GetSnapshotAt(seconds(3)).updated_byte_index == fourth.updated_byte_index);
+            check(device.GetSnapshotAt(seconds(1)).timestamp == first.timestamp);
             check(first.GetUpdatedRegister().definition.name == "-");
         }
     }
@@ -105,8 +105,8 @@ int main()
     check(&first_register.definition.read_bit_fields == &defined_device.GetReadRegisterBitField(0));
     check(first_register.value.write_data == std::vector<uint8_t>{0x01});
     check(last_register.value.write_data.size() == 32);
-    check(!defined_device.GetSnapshotByIndex(0).registers.contains(1));
-    check(defined_device.GetSnapshotByIndex(31).registers.contains(1));
+    check(!defined_device.GetSnapshotAt(seconds(1)).registers.contains(1));
+    check(defined_device.GetSnapshotAt(seconds(32)).registers.contains(1));
     defined_device.ResetRuntime();
     const auto& initial_register = defined_device.GetSnapshotAt(0).registers.at(0);
     check(&initial_register.definition == definition);
@@ -115,5 +115,41 @@ int main()
     check(initial_register.definition.read_bit_fields.at(0).name == "Ready");
     check(initial_register.value.write_data.empty() && initial_register.value.read_data.empty());
     check(defined_device.GetWriteStats().at(0).call_count == 0);
+
+    // Large maps must not be copied into every byte's timeline entry.
+    I2CDevice::Config large_config{};
+    large_config.reg_addr_bytes = 2;
+    large_config.auto_addr_inc = true;
+    large_config.support_direct_read_from_default_reg = true;
+    I2CDevice large_device(large_config);
+    for (uint32_t address = 0; address < 1024; ++address)
+        large_device.SetRegisterName(address, "Register");
+    for (int i = 0; i < 10000; ++i)
+    {
+        large_device.CallThisEachI2CAddrByteWrite(false);
+        large_device.DataByte(0, 0);
+        large_device.DataByte(static_cast<uint8_t>(i % 2), 0);
+        large_device.DataByte(static_cast<uint8_t>(i), seconds(i + 1));
+        large_device.CallThisEachI2CStopCondition();
+        check(large_device.GetSnapshotByIndex(i).registers.size() == 1);
+    }
+    const auto& past = large_device.GetSnapshotAt(seconds(5000));
+    check(past.registers.size() == 1024);
+    check(past.registers.at(0).value.write_data == std::vector<uint8_t>{static_cast<uint8_t>(4998)});
+    check(past.registers.at(1).value.write_data == std::vector<uint8_t>{static_cast<uint8_t>(4999)});
+    check(large_device.GetSnapshotAt(seconds(2)).registers.at(0).value.write_data == std::vector<uint8_t>{0});
+    // A direct-read clear can affect a different register from the next data byte.
+    large_device.CallThisEachI2CAddrByteWrite(true);
+    large_device.DataByte(0xAA, seconds(10001));
+    large_device.CallThisEachI2CStopCondition();
+    large_device.CallThisEachI2CAddrByteWrite(true); // Clear register 0 without recording a byte.
+    large_device.CallThisEachI2CAddrByteWrite(false);
+    large_device.DataByte(0, 0);
+    large_device.DataByte(1, 0);
+    large_device.DataByte(0xBB, seconds(10002));
+    check(large_device.GetSnapshotAt(seconds(10001)).registers.at(0).value.read_data == std::vector<uint8_t>{0xAA});
+    check(large_device.GetSnapshotAt(seconds(10002)).registers.at(0).value.read_data.empty());
+    large_device.ResetRuntime();
+    check(large_device.GetSnapshotAt(seconds(10002)).registers.at(1).value.write_data.empty());
     std::cout << "Register history checks passed.\n";
 }

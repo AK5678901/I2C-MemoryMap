@@ -79,6 +79,7 @@ void I2CDevice::CallThisEachI2CAddrByteWrite(bool is_read)
     {
         state_.current_register_address = config_.default_reg_addr;
         auto& value = GetOrCreateRegister(state_.current_register_address).value;
+        dirty_registers_.insert(state_.current_register_address);
         value.read_data.clear();
         value.byte_has_read.clear();
     }
@@ -90,6 +91,7 @@ void I2CDevice::CallThisEachI2CAddrByteWrite(bool is_read)
     {
         state_.current_register_address = 0;
         auto& value = GetOrCreateRegister(0).value;
+        dirty_registers_.insert(0);
         if (is_read)
         {
             value.read_data.clear();
@@ -113,10 +115,15 @@ void I2CDevice::ResetRuntime()
     state_ = State{};
     snapshots_.clear();
     snapshots_.shrink_to_fit();
+    dirty_registers_.clear();
+    materialized_snapshot_ = Snapshot{};
+    materialized_index_.reset();
     stats_ = Statistics{};
     for (auto& [address, reg] : registers_)
     {
         reg.value = RegisterValue{};
+        reg.first_snapshot = 0;
+        reg.update_snapshot_indices.clear();
         stats_.write_access_stats.try_emplace(address);
         stats_.read_access_stats.try_emplace(address);
     }
@@ -253,7 +260,10 @@ I2CDevice::Register& I2CDevice::GetOrCreateRegister(uint32_t address)
     auto [position, inserted] = registers_.try_emplace(address);
     auto& reg = position->second;
     if (inserted)
-        initial_snapshot_.registers.emplace(address, RegisterSnapshot{reg.definition, reg.value});
+    {
+        reg.first_snapshot = snapshots_.size(); // 履歴番号を、このレジスタの登場位置として記録します
+        initial_snapshot_.registers.emplace(address, RegisterSnapshot{reg.definition, reg.value}); // 通信前の初期状態を保存します。この時点では新規レジスタなので、データは空です
+    }
     return reg;
 }
 
@@ -264,8 +274,15 @@ void I2CDevice::RecordSnapshot(Timestamp timestamp)
     snapshot.is_write = !state_.is_read;
     snapshot.updated_register_address = state_.current_register_address;
     snapshot.segment_id = state_.segment_id;
-    for (const auto& [address, reg] : registers_)
+    dirty_registers_.insert(state_.current_register_address);
+    for (const auto address : dirty_registers_)
+    {
+        auto& reg = registers_.at(address);
         snapshot.registers.emplace(address, RegisterSnapshot{reg.definition, reg.value});
+        reg.update_snapshot_indices.push_back(snapshots_.size());
+    }
+    dirty_registers_.clear();
+    materialized_index_.reset();
     const auto& value = snapshot.GetUpdatedRegister().value;
     const auto& data = snapshot.is_write ? value.write_data : value.read_data;
     snapshot.updated_byte_index = static_cast<int32_t>(data.size() - 1);
@@ -279,7 +296,26 @@ const I2CDevice::Snapshot& I2CDevice::GetSnapshotAt(Timestamp timestamp) const
         return initial_snapshot_;
     const auto position = std::upper_bound(snapshots_.begin(), snapshots_.end(), timestamp,
         [](Timestamp time, const Snapshot& snapshot) { return time < snapshot.timestamp; });
-    return position == snapshots_.begin() ? empty_snapshot : *std::prev(position);
+    if (position == snapshots_.begin())
+        return empty_snapshot;
+    const auto index = static_cast<std::size_t>(std::distance(snapshots_.begin(), position) - 1);
+    if (materialized_index_ != index)
+    {
+        materialized_snapshot_ = snapshots_[index];
+        for (const auto& [address, reg] : registers_)
+        {
+            if (reg.first_snapshot > index || materialized_snapshot_.registers.contains(address))
+                continue;
+            const auto version = std::upper_bound(reg.update_snapshot_indices.begin(),
+                                                  reg.update_snapshot_indices.end(), index);
+            const auto& value = version == reg.update_snapshot_indices.begin()
+                                    ? initial_snapshot_.registers.at(address).value
+                                    : snapshots_[*std::prev(version)].registers.at(address).value;
+            materialized_snapshot_.registers.emplace(address, RegisterSnapshot{reg.definition, value});
+        }
+        materialized_index_ = index;
+    }
+    return materialized_snapshot_;
 }
 
 const I2CDevice::Snapshot& I2CDevice::GetSnapshotByIndex(std::size_t index) const
