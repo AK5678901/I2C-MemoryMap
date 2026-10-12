@@ -245,8 +245,9 @@ void I2CDevice::DataByte(uint8_t data, Timestamp timestamp)
         state_.write_byte_count++;
 
         // アドレス確定後の最初のデータで、以前のWriteまたはReadバッファをクリアする。
-        state_.clear_buffer_on_next_data_byte =
-            (state_.write_byte_count == config_.reg_addr_bytes);
+        // Preserve the flag set by auto-increment for the next register.
+        if (state_.write_byte_count == config_.reg_addr_bytes)
+            state_.clear_buffer_on_next_data_byte = true;
     }
 }
 

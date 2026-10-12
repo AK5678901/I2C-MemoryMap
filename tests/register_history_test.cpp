@@ -13,7 +13,51 @@ constexpr Timestamp seconds(int value) { return static_cast<Timestamp>(value) * 
 
 int main()
 {
-    for (int address_bytes : {0, 1})
+    // Repeated two-byte-address writes followed by direct reads must replace,
+    // not append to, the next auto-incremented register's previous value.
+    I2CDevice::Config pointer_config{};
+    pointer_config.reg_addr_bytes = 2;
+    pointer_config.auto_addr_inc = true;
+    for (const bool stop_before_read : {false, true})
+    {
+        I2CDevice pointer_device(pointer_config);
+        Timestamp tick = 0;
+        for (int cycle = 0; cycle < 3; ++cycle)
+        {
+            pointer_device.CallThisEachI2CAddrByteWrite(false);
+            pointer_device.DataByte(0x01, ++tick);
+            pointer_device.DataByte(0x03, ++tick);
+            pointer_device.DataByte(0x04, ++tick);
+            if (stop_before_read)
+                pointer_device.CallThisEachI2CStopCondition();
+            pointer_device.CallThisEachI2CAddrByteWrite(true);
+            pointer_device.DataByte(0x81, ++tick);
+            const auto& first_read = pointer_device.GetSnapshotByIndex(pointer_device.GetSnapshotCount() - 1);
+            check(first_read.updated_register_address == 0x0104);
+            check(first_read.GetUpdatedRegister().value.read_data == std::vector<uint8_t>{0x81});
+            check(first_read.updated_byte_index == 0);
+            pointer_device.DataByte(0x23, ++tick);
+            pointer_device.CallThisEachI2CStopCondition();
+        }
+        check(pointer_device.GetSnapshotByIndex(1).GetUpdatedRegister().value.read_data == std::vector<uint8_t>{0x81});
+
+        // The same flag also protects later bytes of repeated auto-increment writes.
+        for (int cycle = 0; cycle < 2; ++cycle)
+        {
+            pointer_device.CallThisEachI2CAddrByteWrite(false);
+            pointer_device.DataByte(0x01, ++tick);
+            pointer_device.DataByte(0x03, ++tick);
+            pointer_device.DataByte(0x11, ++tick);
+            pointer_device.DataByte(0x22, ++tick);
+            pointer_device.CallThisEachI2CStopCondition();
+            const auto& last_write = pointer_device.GetSnapshotByIndex(pointer_device.GetSnapshotCount() - 1);
+            check(last_write.updated_register_address == 0x0104);
+            check(last_write.GetUpdatedRegister().value.write_data == std::vector<uint8_t>{0x22});
+        }
+
+    }
+
+    for (int address_bytes : {0, 1, 2})
     {
         for (bool auto_increment : {false, true})
         {
@@ -24,7 +68,7 @@ int main()
             I2CDevice device(config);
             check(device.GetSnapshotCount() == 0);
             device.CallThisEachI2CAddrByteWrite(false);
-            if (address_bytes)
+            for (int index = 0; index < address_bytes; ++index)
                 device.DataByte(0, seconds(0));
             check(device.GetSnapshotCount() == 0); // Address bytes are not register updates.
             device.DataByte(0x12, seconds(1));
