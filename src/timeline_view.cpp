@@ -14,18 +14,18 @@
 
 namespace
 {
-constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"Bus / I2C Address", 165.0F}, {"Device", 119.0F},
+constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"Bus", 90.0F}, {"I2C Address", 90.0F}, {"Device", 145.0F},
                                                              {"Register", 61.0F},    {"Name", 110.0F},
                                                              {"Write Data", 110.0F}, {"Read Data", 110.0F}};
 
 void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2CBusManager& bus_manager,
                         const TimeValue::DisplayView& display, TimelineSyncState& sync,
                         const bool scroll_to_selected, const bool jump_to_target,
-                        ViewHelpers::TimelineFilters<7>& filters)
+                        ViewHelpers::TimelineFilters<8>& filters)
 {
     const auto target_time = sync.position().time;
     ImGui::Text("Transactions: %zu", rows.size());
-    if (!ImGui::BeginTable("AllTransactions", 7, ViewHelpers::table_flags))
+    if (!ImGui::BeginTable("AllTransactions", 8, ViewHelpers::table_flags))
         return;
     const auto sample_time = rows.empty() ? target_time : rows.front().timestamp;
     ViewHelpers::setupTimelineColumns(display, sample_time, kTimelineColumns);
@@ -46,12 +46,13 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
         };
         if ((!filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
-            (!filters[1][0] || matches(1, row.device_address.label())) &&
-            (!filters[2][0] || matches(2, device->GetDeviceName())) &&
-            (!filters[3][0] || matches(3, register_label)) &&
-            (!filters[4][0] || matches(4, name)) &&
-            (!filters[5][0] || matches(5, row.is_write ? ViewHelpers::formatTimelineBytes(row.bytes) : "")) &&
-            (!filters[6][0] || matches(6, row.is_write ? "" : ViewHelpers::formatTimelineBytes(row.bytes))))
+            (!filters[1][0] || matches(1, row.device_address.bus)) &&
+            (!filters[2][0] || matches(2, std::format("0x{:02X}", row.device_address.address))) &&
+            (!filters[3][0] || matches(3, device->GetDeviceName())) &&
+            (!filters[4][0] || matches(4, register_label)) &&
+            (!filters[5][0] || matches(5, name)) &&
+            (!filters[6][0] || matches(6, row.is_write ? ViewHelpers::formatTimelineBytes(row.bytes) : "")) &&
+            (!filters[7][0] || matches(7, row.is_write ? "" : ViewHelpers::formatTimelineBytes(row.bytes))))
             visible_rows.push_back(index);
     }
     const auto position = std::upper_bound(visible_rows.begin(), visible_rows.end(), target_time,
@@ -112,16 +113,18 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             if (scroll_index == static_cast<std::size_t>(index))
                 ImGui::SetScrollHereY(0.5F);
             ImGui::TableSetColumnIndex(1);
-            ImGui::TextUnformatted(row.device_address.label().c_str());
+            ImGui::TextUnformatted(row.device_address.bus.c_str());
             ImGui::TableSetColumnIndex(2);
-            ImGui::TextUnformatted(device->GetDeviceName().c_str());
+            ImGui::Text("0x%02X", static_cast<unsigned int>(row.device_address.address));
             ImGui::TableSetColumnIndex(3);
-            ImGui::TextUnformatted(ViewHelpers::formatTransactionRegister(row, device->GetRegisterAddressBytes() == 0).c_str());
+            ImGui::TextUnformatted(device->GetDeviceName().c_str());
             ImGui::TableSetColumnIndex(4);
+            ImGui::TextUnformatted(ViewHelpers::formatTransactionRegister(row, device->GetRegisterAddressBytes() == 0).c_str());
+            ImGui::TableSetColumnIndex(5);
             const auto name = row.first_register_address == row.last_register_address
                                   ? device->GetRegisterName(row.first_register_address) : std::string("(multiple)");
             ImGui::TextUnformatted(name.c_str());
-            ImGui::TableSetColumnIndex(row.is_write ? 5 : 6);
+            ImGui::TableSetColumnIndex(row.is_write ? 6 : 7);
             ViewHelpers::renderTransactionBytesWithTooltips(row, *device);
             ImGui::PopID();
         }
@@ -189,7 +192,7 @@ void TimelineView::render(State& state, I2CBusManager& bus_manager,
     }
     const auto target_time = sync.position().time;
     ImGui::Text("Databytes: %zu", timeline.size());
-    if (ImGui::BeginTable("AllAccesses", 7, ViewHelpers::table_flags))
+    if (ImGui::BeginTable("AllAccesses", 8, ViewHelpers::table_flags))
     {
         const auto sample_time = timeline.empty() ? target_time : timeline.front().timestamp;
         ViewHelpers::setupTimelineColumns(display, sample_time, kTimelineColumns);
@@ -215,14 +218,15 @@ void TimelineView::render(State& state, I2CBusManager& bus_manager,
                     return ViewHelpers::matchesTimelineFilter(state.filters[column].data(), value);
                 };
                 if ((!state.filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
-                    (!state.filters[1][0] || matches(1, row.device_address.label())) &&
-                    (!state.filters[2][0] || matches(2, device->GetDeviceName())) &&
-                    (!state.filters[3][0] || matches(3, device->GetRegisterAddressBytes() == 0
+                    (!state.filters[1][0] || matches(1, row.device_address.bus)) &&
+                    (!state.filters[2][0] || matches(2, std::format("0x{:02X}", row.device_address.address))) &&
+                    (!state.filters[3][0] || matches(3, device->GetDeviceName())) &&
+                    (!state.filters[4][0] || matches(4, device->GetRegisterAddressBytes() == 0
                                                    ? "-" : std::format("0x{:04X}", entry.updated_register_address))) &&
-                    (!state.filters[4][0] || matches(4, device->GetRegisterName(entry.updated_register_address))) &&
-                    (!state.filters[5][0] || matches(5, entry.is_write
-                                                   ? ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.write_data) : "")) &&
+                    (!state.filters[5][0] || matches(5, device->GetRegisterName(entry.updated_register_address))) &&
                     (!state.filters[6][0] || matches(6, entry.is_write
+                                                   ? ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.write_data) : "")) &&
+                    (!state.filters[7][0] || matches(7, entry.is_write
                                                    ? "" : ViewHelpers::formatTimelineBytes(entry.GetUpdatedRegister().value.read_data))))
                     visible_rows.push_back(index);
             }
@@ -284,17 +288,19 @@ void TimelineView::render(State& state, I2CBusManager& bus_manager,
                 if (scroll_index == static_cast<std::size_t>(index))
                     ImGui::SetScrollHereY(0.5F);
                 ImGui::TableSetColumnIndex(1);
-                ImGui::TextUnformatted(row.device_address.label().c_str());
+                ImGui::TextUnformatted(row.device_address.bus.c_str());
                 ImGui::TableSetColumnIndex(2);
-                ImGui::TextUnformatted(device->GetDeviceName().c_str());
+                ImGui::Text("0x%02X", static_cast<unsigned int>(row.device_address.address));
                 ImGui::TableSetColumnIndex(3);
+                ImGui::TextUnformatted(device->GetDeviceName().c_str());
+                ImGui::TableSetColumnIndex(4);
                 if (device->GetRegisterAddressBytes() == 0)
                     ImGui::TextUnformatted("-");
                 else
                     ImGui::Text("0x%04X", entry.updated_register_address);
-                ImGui::TableSetColumnIndex(4);
+                ImGui::TableSetColumnIndex(5);
                 ImGui::TextUnformatted(device->GetRegisterName(entry.updated_register_address).c_str());
-                ImGui::TableSetColumnIndex(entry.is_write ? 5 : 6);
+                ImGui::TableSetColumnIndex(entry.is_write ? 6 : 7);
                 const auto& info = entry.GetUpdatedRegister();
                 ViewHelpers::renderBytesWithTooltips(entry.is_write ? info.value.write_data : info.value.read_data,
                                                      entry.is_write ? info.definition.write_bit_fields : info.definition.read_bit_fields,

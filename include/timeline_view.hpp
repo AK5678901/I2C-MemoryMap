@@ -24,7 +24,7 @@ struct State
 {
     AccessTimeline access_timeline;
     std::vector<ViewHelpers::TransactionRow> grouped_timeline;
-    ViewHelpers::TimelineFilters<7> filters{};
+    ViewHelpers::TimelineFilters<8> filters{};
     bool group_transactions{false};
     std::uint64_t applied_revision{0};
 };

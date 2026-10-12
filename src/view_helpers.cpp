@@ -20,7 +20,7 @@ float timeColumnWidth(const TimeValue::DisplayView& display, Timestamp sample_ti
     case TimeValue::DisplayFormat::ShortUtc:
     case TimeValue::DisplayFormat::ShortLocal: example = "08:20:18.123456789"; break;
     case TimeValue::DisplayFormat::SinceFirstEvent: example = "6789.123456789"; break;
-    case TimeValue::DisplayFormat::RawCsv: example = "6789.123456789";break;
+    case TimeValue::DisplayFormat::RawCsv: example = "12345.123456789"; break;
     }
     const auto label = example != nullptr ? std::string(example) : display.formatTimestamp(sample_time);
     return std::max(ImGui::CalcTextSize(label.c_str()).x + ImGui::GetStyle().CellPadding.x * 2.0F + 12.0F, 65.0F);
