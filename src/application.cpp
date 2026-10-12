@@ -29,7 +29,7 @@ int Application::run()
             MessageBoxW(nullptr, L"Could not listen on UDP port 48152.", L"Error", MB_OK | MB_ICONERROR);
             return 1;
         }
-        main_window_.reset(processor_.GetInfo());
+        main_window_.reset(bus_manager_.GetInfo());
         glfwSetWindowTitle(&gui_.window(), "I2C_MemoryMap - Saleae Logic 2 live");
     }
     else if (!selectAndLoadLog())
@@ -40,9 +40,14 @@ int Application::run()
 
 bool Application::loadConfiguration()
 {
-    if (loadDeviceConfigs(devicemanager_))
+    std::string error;
+    if (loadDeviceConfigs(bus_manager_, "devices", &error))
         return true;
-    MessageBoxW(nullptr, L"Failed to load JSON files from the 'devices' directory.", L"Error", MB_OK | MB_ICONERROR);
+    const int length = MultiByteToWideChar(CP_UTF8, 0, error.data(), static_cast<int>(error.size()), nullptr, 0);
+    std::wstring detail(static_cast<std::size_t>(length), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, error.data(), static_cast<int>(error.size()), detail.data(), length);
+    const auto message = L"Failed to load device configuration.\n\n" + detail;
+    MessageBoxW(nullptr, message.c_str(), L"Error", MB_OK | MB_ICONERROR);
     return false;
 }
 
@@ -52,8 +57,16 @@ bool Application::selectAndLoadLog()
     if (!csv_path)
         return false;
 
-    importCsvLog(devicemanager_, processor_, *csv_path);
-    main_window_.reset(processor_.GetInfo());
+    try
+    {
+        importCsvLog(bus_manager_, *csv_path);
+    }
+    catch (const std::exception& error)
+    {
+        MessageBoxA(nullptr, error.what(), "CSV import error", MB_OK | MB_ICONERROR);
+        return false;
+    }
+    main_window_.reset(bus_manager_.GetInfo());
     const auto title = std::format("I2C_MemoryMap - [{}]", pathToUtf8(*csv_path));
     glfwSetWindowTitle(&gui_.window(), title.c_str());
     return true;
@@ -67,14 +80,14 @@ void Application::runMainLoop()
         if (live_receiver_)
         {
             bool reset = false;
-            const bool changed = live_receiver_->poll(devicemanager_, processor_, reset);
+            const bool changed = live_receiver_->poll(bus_manager_, reset);
             if (reset)
-                main_window_.reset(processor_.GetInfo());
+                main_window_.reset(bus_manager_.GetInfo());
             if (changed)
-                main_window_.refreshLive(devicemanager_, processor_.GetInfo());
+                main_window_.refreshLive(bus_manager_, bus_manager_.GetInfo());
         }
         gui_.beginFrame();
-        main_window_.render(devicemanager_, processor_.GetInfo(), live_receiver_.get());
+        main_window_.render(bus_manager_, bus_manager_.GetInfo(), live_receiver_.get());
         gui_.endFrame();
         if (gui_.shouldClose())
             break;

@@ -6,10 +6,21 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <stdexcept>
 
 namespace
 {
 using Json = nlohmann::json;
+
+bool configError(const std::filesystem::path& path, const std::string& reason, std::string* error)
+{
+    const auto utf8 = std::filesystem::absolute(path).u8string();
+    const auto message = std::string(utf8.begin(), utf8.end()) + "\n\n" + reason;
+    if (error)
+        *error = message;
+    std::cerr << message << '\n';
+    return false;
+}
 using RegisterBitFieldSetter = void (I2CDevice::*)(std::uint32_t, const I2CDevice::BitFieldDefinition&);
 
 void registerBitFields(I2CDevice& device, const Json& register_json, const std::string& key,
@@ -65,7 +76,7 @@ void registerDevices(I2CDeviceManager& devicemanager, const Json& root)
 {
     if (!root.contains("devices") || !root["devices"].is_array())
     {
-        return;
+        throw std::runtime_error("Expected a root object with a 'devices' array.");
     }
 
     for (const auto& device_json : root["devices"])
@@ -85,58 +96,90 @@ void registerDevices(I2CDeviceManager& devicemanager, const Json& root)
             .is_little_endian = endian == "little",
         };
 
+        if (devicemanager.GetDevice(config.i2c_dev_addr))
+            throw std::runtime_error("Duplicate device address: " + address_text);
         auto* device = devicemanager.RegisterDevice(config);
         registerDefinitions(*device, device_json, config.is_little_endian);
     }
 }
 } // namespace
 
-bool loadDeviceConfigs(I2CDeviceManager& devicemanager, const std::filesystem::path& directory)
+bool loadDeviceConfigs(I2CDeviceManager& devicemanager, const std::filesystem::path& directory, std::string* error)
 {
-    if (!std::filesystem::exists(directory))
+    if (error)
+        error->clear();
+    try
     {
+        if (!std::filesystem::exists(directory))
+            return true;
+        if (!std::filesystem::is_directory(directory))
+            return configError(directory, "Not a directory.", error);
+        for (const auto& entry : std::filesystem::directory_iterator(directory))
+        {
+            if (!entry.is_regular_file() || entry.path().extension() != ".json")
+                continue;
+            try
+            {
+                std::ifstream file(entry.path());
+                if (!file)
+                    return configError(entry.path(), "Could not open the JSON file.", error);
+                Json root;
+                file >> root;
+                registerDevices(devicemanager, root);
+            }
+            catch (const std::exception& exception)
+            {
+                return configError(entry.path(), exception.what(), error);
+            }
+        }
         return true;
     }
-    if (!std::filesystem::is_directory(directory))
+    catch (const std::exception& exception)
     {
-        std::cerr << "Config directory not found: " << directory.string() << '\n';
-        return false;
+        return configError(directory, exception.what(), error);
     }
+}
 
-    bool found_any = false;
-    bool loaded_any = false;
-    for (const auto& entry : std::filesystem::directory_iterator(directory))
+bool loadDeviceConfigs(I2CBusManager& bus_manager, const std::filesystem::path& directory, std::string* error)
+{
+    if (error)
+        error->clear();
+    try
     {
-        if (!entry.is_regular_file() || entry.path().extension() != ".json")
+        if (!std::filesystem::exists(directory))
+            return true;
+        if (!std::filesystem::is_directory(directory))
+            return configError(directory, "Not a directory.", error);
+        const auto load_bus = [&](const std::string& name, const std::filesystem::path& folder) {
+            I2CDeviceManager devices;
+            if (!loadDeviceConfigs(devices, folder, error))
+                return false;
+            bus_manager.registerDevices(name, std::move(devices));
+            return true;
+        };
+        // Legacy files directly under devices belong to the default bus.
+        for (const auto& entry : std::filesystem::directory_iterator(directory))
         {
-            continue;
+            if (entry.is_regular_file() && entry.path().extension() == ".json")
+            {
+                if (!load_bus("default", directory))
+                    return false;
+                break;
+            }
         }
-
-        found_any = true;
-        std::ifstream file(entry.path());
-        if (!file)
+        for (const auto& entry : std::filesystem::directory_iterator(directory))
         {
-            std::cerr << "Failed to open config file: " << entry.path().string() << '\n';
-            continue;
+            if (!entry.is_directory())
+                continue;
+            const auto utf8 = entry.path().filename().u8string();
+            const std::string name(utf8.begin(), utf8.end());
+            if (!load_bus(name, entry.path()))
+                return false;
         }
-
-        try
-        {
-            Json root;
-            file >> root;
-            registerDevices(devicemanager, root);
-            // Preserve the original definition of success: any parseable JSON file.
-            loaded_any = true;
-        }
-        catch (const std::exception& error)
-        {
-            std::cerr << "JSON Parse Error in " << entry.path().string() << ": " << error.what() << '\n';
-        }
+        return true;
     }
-
-    if (found_any && !loaded_any)
+    catch (const std::exception& exception)
     {
-        std::cerr << "No valid JSON config files found in 'devices' directory.\n";
+        return configError(directory, exception.what(), error);
     }
-    return !found_any || loaded_any;
 }

@@ -1,9 +1,8 @@
 #pragma once
 
 #include "i2c_event.hpp"
-#include <limits>
+#include "timeline_info.hpp"
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 class I2CDevice;
@@ -14,12 +13,7 @@ class I2CEventProcessor
   public:
     struct Info
     {
-        Timestamp max_timestamp{std::numeric_limits<Timestamp>::min()};
-        Timestamp min_timestamp{std::numeric_limits<Timestamp>::max()};
-        std::vector<Timestamp> timestamps;
-        bool has_absolute_timestamps{true};
-        bool has_csv_timestamps{false};
-        std::unordered_map<Timestamp, std::string> raw_csv_timestamps;
+        TimelineInfo timeline;
         std::vector<std::uint8_t> active_addresses;
     };
 

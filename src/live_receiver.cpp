@@ -1,4 +1,5 @@
 #include "live_receiver.hpp"
+#include "i2c_bus_manager.hpp"
 #include "time_value.hpp"
 
 #include <algorithm>
@@ -73,14 +74,14 @@ void LiveReceiver::receiveLoop()
     }
 }
 
-bool LiveReceiver::poll(I2CDeviceManager& devices, I2CEventProcessor& processor, bool& reset)
+bool LiveReceiver::poll(I2CBusManager& bus_manager, bool& reset)
 {
     reset = false;
     if (!ready())
         return false;
     bool changed = false;
     const auto reset_capture = [&]() {
-        processor.reset(devices);
+        bus_manager.resetBus("I2C");
         last_frame_timestamp_ = std::numeric_limits<Timestamp>::min();
         last_sequence_ = 0;
         received_frames_ = 0;
@@ -144,7 +145,7 @@ bool LiveReceiver::poll(I2CDeviceManager& devices, I2CEventProcessor& processor,
         {
             if (!record_sequence(sequence))
                 continue;
-            processor.process({I2CEvent::Type::Stop}, devices);
+            bus_manager.process("I2C", {I2CEvent::Type::Stop});
             continue;
         }
         if (frame.size() < 3 || frame[1] != ',')
@@ -169,8 +170,8 @@ bool LiveReceiver::poll(I2CDeviceManager& devices, I2CEventProcessor& processor,
             const auto parsed = std::from_chars(frame.data() + comma + 1, frame.data() + next, address);
             if (parsed.ec != std::errc{} || parsed.ptr != frame.data() + next || address > 127 || (frame[next + 1] != '0' && frame[next + 1] != '1'))
                 continue;
-            changed |= processor.process({I2CEvent::Type::Address, timestamp,
-                                           static_cast<std::uint8_t>(address), frame[next + 1] == '1'}, devices);
+            changed |= bus_manager.process("I2C", {I2CEvent::Type::Address, timestamp,
+                                           static_cast<std::uint8_t>(address), frame[next + 1] == '1'});
             last_frame_timestamp_ = timestamp;
         }
         else if (frame[0] == 'D')
@@ -179,8 +180,8 @@ bool LiveReceiver::poll(I2CDeviceManager& devices, I2CEventProcessor& processor,
             const auto parsed = std::from_chars(frame.data() + comma + 1, frame.data() + frame.size(), value);
             if (parsed.ec != std::errc{} || parsed.ptr != frame.data() + frame.size() || value > 255)
                 continue;
-            changed |= processor.process({I2CEvent::Type::Data, timestamp,
-                                           static_cast<std::uint8_t>(value)}, devices);
+            changed |= bus_manager.process("I2C", {I2CEvent::Type::Data, timestamp,
+                                           static_cast<std::uint8_t>(value)});
             last_frame_timestamp_ = timestamp;
         }
     }

@@ -84,7 +84,7 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
 {
     std::vector<ViewHelpers::TransactionRow> rows;
     for (std::size_t index = 0; index < device.GetSnapshotCount(); ++index)
-        ViewHelpers::appendTransactionByte(rows, 0, index, device.GetSnapshotByIndex(index));
+        ViewHelpers::appendTransactionByte(rows, DeviceKey{}, index, device.GetSnapshotByIndex(index));
     ImGui::Text("Transactions: %zu", rows.size());
     if (!ImGui::BeginTable("TransactionTimeline", 5, ViewHelpers::table_flags))
         return std::nullopt;
@@ -356,15 +356,15 @@ void renderAccessStatistics(const I2CDevice& device, const Timestamp target_time
 }
 } // namespace
 
-std::string DeviceWindow::name(const I2CDevice& device, const std::uint8_t address)
+std::string DeviceWindow::name(const I2CDevice& device, const DeviceKey address)
 {
-    return std::format("{} [0x{:02X}]", device.GetDeviceName(), address);
+    return std::format("{} / {} [0x{:02X}]", address.bus, device.GetDeviceName(), address.address);
 }
 
-void DeviceWindow::render(I2CDeviceManager& devicemanager, std::map<std::uint8_t, State>& states,
+void DeviceWindow::render(I2CBusManager& bus_manager, std::map<DeviceKey, State>& states,
                           const TimeValue::DisplayView& display, TimelineSyncState& sync)
 {
-    for (const auto& [address, device] : devicemanager.GetAllDevices())
+    for (const auto& [address, device] : bus_manager.GetAllDevices())
     {
         const auto position = states.find(address);
         if (position == states.end() || !position->second.visible)

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "device_key.hpp"
+
 #include "timestamp.hpp"
 
 #include <cstddef>
@@ -8,7 +10,7 @@
 
 struct TimelineSnapshotPosition
 {
-    std::uint8_t device_address;
+    DeviceKey device_address;
     std::size_t snapshot_index;
 };
 
@@ -40,7 +42,7 @@ class TimelineSyncState
         ++revision_;
     }
 
-    void selectSnapshot(const Timestamp time, const std::uint8_t device_address,
+    void selectSnapshot(const Timestamp time, const DeviceKey device_address,
                         const std::size_t snapshot_index)
     {
         position_ = {time, TimelineSnapshotPosition{device_address, snapshot_index}};

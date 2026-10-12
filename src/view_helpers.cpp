@@ -145,7 +145,7 @@ std::string ViewHelpers::formatTimelineBytes(const std::vector<std::uint8_t>& da
     return result;
 }
 
-void ViewHelpers::appendTransactionByte(std::vector<TransactionRow>& rows, const std::uint8_t device_address,
+void ViewHelpers::appendTransactionByte(std::vector<TransactionRow>& rows, const DeviceKey device_address,
                                         const std::size_t snapshot_index, const I2CDevice::Snapshot& entry)
 {
     const auto& data = entry.is_write ? entry.GetUpdatedRegister().value.write_data : entry.GetUpdatedRegister().value.read_data;

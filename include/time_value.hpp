@@ -6,7 +6,7 @@
 #include <string_view>
 
 #include "timestamp.hpp"
-#include "i2c_event_processor.hpp"
+#include "timeline_info.hpp"
 
 namespace TimeValue
 {
@@ -20,13 +20,13 @@ enum class DisplayFormat { IsoUtc, IsoLocal, ShortUtc, ShortLocal, SinceFirstEve
 class DisplayView
 {
   public:
-    DisplayView(const I2CEventProcessor::Info& info, DisplayFormat format) : info_(info), format_(format) {}
+    DisplayView(const TimelineInfo& info, DisplayFormat format) : info_(info), format_(format) {}
     [[nodiscard]] DisplayFormat format() const { return format_; }
     [[nodiscard]] std::string formatTimestamp(Timestamp timestamp) const;
     [[nodiscard]] std::optional<Timestamp> parseDisplayed(std::string_view text, Timestamp reference) const;
 
   private:
-    const I2CEventProcessor::Info& info_;
+    const TimelineInfo& info_;
     DisplayFormat format_;
 };
 } // namespace TimeValue

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "device_key.hpp"
+
 #include "i2c_device.hpp"
 
 #include "imgui.h"
@@ -44,7 +46,7 @@ struct TransactionRow
 {
     Timestamp first_timestamp;
     Timestamp timestamp;
-    std::uint8_t device_address;
+    DeviceKey device_address;
     std::size_t first_snapshot_index;
     std::size_t last_snapshot_index;
     std::uint32_t first_register_address;
@@ -54,7 +56,7 @@ struct TransactionRow
     std::vector<std::uint8_t> bytes;
 };
 
-void appendTransactionByte(std::vector<TransactionRow>& rows, std::uint8_t device_address,
+void appendTransactionByte(std::vector<TransactionRow>& rows, DeviceKey device_address,
                            std::size_t snapshot_index, const I2CDevice::Snapshot& entry);
 std::string formatTransactionRegister(const TransactionRow& row, bool registerless);
 void renderTransactionBytesWithTooltips(const TransactionRow& row, const I2CDevice& device);

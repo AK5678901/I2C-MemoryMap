@@ -39,16 +39,16 @@ bool I2CEventProcessor::process(const I2CEvent& event, I2CDeviceManager& devices
             return false; // Register address bytes do not produce snapshots.
 
         // Fast append for ordered input; keep navigation times sorted and unique.
-        if (info_.timestamps.empty() || event.timestamp > info_.timestamps.back())
-            info_.timestamps.push_back(event.timestamp);
-        else if (event.timestamp != info_.timestamps.back())
+        if (info_.timeline.timestamps.empty() || event.timestamp > info_.timeline.timestamps.back())
+            info_.timeline.timestamps.push_back(event.timestamp);
+        else if (event.timestamp != info_.timeline.timestamps.back())
         {
-            const auto position = std::ranges::lower_bound(info_.timestamps, event.timestamp);
-            if (position == info_.timestamps.end() || *position != event.timestamp)
-                info_.timestamps.insert(position, event.timestamp);
+            const auto position = std::ranges::lower_bound(info_.timeline.timestamps, event.timestamp);
+            if (position == info_.timeline.timestamps.end() || *position != event.timestamp)
+                info_.timeline.timestamps.insert(position, event.timestamp);
         }
-        info_.min_timestamp = info_.timestamps.front();
-        info_.max_timestamp = info_.timestamps.back();
+        info_.timeline.min_timestamp = info_.timeline.timestamps.front();
+        info_.timeline.max_timestamp = info_.timeline.timestamps.back();
         return true;
     }
     case I2CEvent::Type::Stop:
@@ -70,11 +70,11 @@ void I2CEventProcessor::reset(I2CDeviceManager& devices)
 
 void I2CEventProcessor::SetCsvTimeFormat(bool absolute)
 {
-    info_.has_csv_timestamps = true;
-    info_.has_absolute_timestamps = absolute;
+    info_.timeline.has_csv_timestamps = true;
+    info_.timeline.has_absolute_timestamps = absolute;
 }
 
 void I2CEventProcessor::RecordCsvTimestamp(Timestamp timestamp, const std::string& text)
 {
-    info_.raw_csv_timestamps.try_emplace(timestamp, text);
+    info_.timeline.raw_csv_timestamps.try_emplace(timestamp, text);
 }

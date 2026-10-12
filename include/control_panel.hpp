@@ -1,7 +1,7 @@
 #pragma once
 
-#include "i2c_device.hpp"
-#include "i2c_event_processor.hpp"
+#include "i2c_bus_manager.hpp"
+#include "timeline_info.hpp"
 #include "timeline_sync.hpp"
 #include <array>
 #include <optional>
@@ -15,7 +15,7 @@ class State
 {
   public:
     void resetJumpInput();
-    Result render(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info,
+    Result render(const I2CBusManager& bus_manager, const TimelineInfo& info,
                   TimeValue::DisplayFormat& format, Timestamp& target_time,
                   TimelineSyncState& timeline_sync, const LiveReceiver* live_receiver);
 

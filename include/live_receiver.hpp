@@ -1,6 +1,8 @@
 #pragma once
 
-#include "i2c_event_processor.hpp"
+#include "timestamp.hpp"
+
+class I2CBusManager;
 
 #include <cstdint>
 #include <limits>
@@ -21,7 +23,7 @@ class LiveReceiver final
     LiveReceiver(const LiveReceiver&) = delete;
     LiveReceiver& operator=(const LiveReceiver&) = delete;
     [[nodiscard]] bool ready() const { return socket_ != INVALID_SOCKET; }
-    [[nodiscard]] bool poll(I2CDeviceManager& devices, I2CEventProcessor& processor, bool& reset);
+    [[nodiscard]] bool poll(I2CBusManager& bus_manager, bool& reset);
     [[nodiscard]] std::uint64_t receivedFrames() const { return received_frames_; }
     [[nodiscard]] std::uint64_t missingFrames() const { return missing_frames_; }
     [[nodiscard]] bool hasSequence() const { return has_sequence_; }

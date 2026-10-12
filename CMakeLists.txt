@@ -84,10 +84,23 @@ if(BUILD_TESTING)
     add_i2c_memorymap_test(access_statistics_test tests/access_statistics_test.cpp)
     add_i2c_memorymap_test(i2c_event_processor_test tests/i2c_event_processor_test.cpp)
     target_sources(i2c_event_processor_test PRIVATE src/i2c_event_processor.cpp)
+    add_i2c_memorymap_test(i2c_bus_manager_test tests/i2c_bus_manager_test.cpp)
+    target_sources(i2c_bus_manager_test PRIVATE src/i2c_event_processor.cpp)
     add_executable(time_value_test tests/time_value_test.cpp src/time_value.cpp)
     target_include_directories(time_value_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
     add_test(NAME time_value_test COMMAND time_value_test)
     add_executable(csv_iso_test tests/csv_iso_test.cpp src/csv_processor.cpp src/i2c_event_processor.cpp src/i2c_device.cpp src/time_value.cpp)
     target_include_directories(csv_iso_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
     add_test(NAME csv_iso_test COMMAND csv_iso_test)
+    add_executable(multi_bus_test tests/multi_bus_test.cpp src/csv_processor.cpp src/device_config_loader.cpp
+        src/i2c_event_processor.cpp src/i2c_device.cpp src/time_value.cpp)
+    target_include_directories(multi_bus_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    add_test(NAME multi_bus_test COMMAND multi_bus_test)
+    add_executable(multi_bus_view_test tests/multi_bus_view_test.cpp
+        src/timeline_view.cpp src/device_window.cpp src/view_helpers.cpp
+        src/i2c_event_processor.cpp src/i2c_device.cpp src/time_value.cpp
+        "${IMGUI_DIR}/imgui.cpp" "${IMGUI_DIR}/imgui_draw.cpp"
+        "${IMGUI_DIR}/imgui_widgets.cpp" "${IMGUI_DIR}/imgui_tables.cpp")
+    target_include_directories(multi_bus_view_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include" "${IMGUI_DIR}")
+    add_test(NAME multi_bus_view_test COMMAND multi_bus_view_test)
 endif()

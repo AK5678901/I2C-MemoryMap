@@ -11,7 +11,7 @@
 
 namespace
 {
-void moveToPreviousTimestamp(const I2CEventProcessor::Info& info, Timestamp& target_time)
+void moveToPreviousTimestamp(const TimelineInfo& info, Timestamp& target_time)
 {
     if (info.timestamps.empty())
         return;
@@ -20,7 +20,7 @@ void moveToPreviousTimestamp(const I2CEventProcessor::Info& info, Timestamp& tar
     target_time = index > 0 ? info.timestamps[index - 1] : info.timestamps.front();
 }
 
-void moveToNextTimestamp(const I2CEventProcessor::Info& info, Timestamp& target_time)
+void moveToNextTimestamp(const TimelineInfo& info, Timestamp& target_time)
 {
     if (info.timestamps.empty())
         return;
@@ -37,7 +37,7 @@ void ControlPanel::State::resetJumpInput()
     previous_format_.reset();
 }
 
-ControlPanel::Result ControlPanel::State::render(const I2CDeviceManager&, const I2CEventProcessor::Info& info,
+ControlPanel::Result ControlPanel::State::render(const I2CBusManager&, const TimelineInfo& info,
                                                  TimeValue::DisplayFormat& format, Timestamp& target_time,
                                                  TimelineSyncState& timeline_sync,
                                                  const LiveReceiver* live_receiver)

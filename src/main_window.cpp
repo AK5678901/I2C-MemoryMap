@@ -14,12 +14,12 @@ namespace
 {
 constexpr float kControlPanelHeight = 360.0F;
 
-void setupDockLayout(I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info, const ImGuiID dockspace_id,
+void setupDockLayout(I2CBusManager& bus_manager, const I2CBusManager::Info& info, const ImGuiID dockspace_id,
                      const float left_column_width = 0.0F)
 {
-    std::vector<std::uint8_t> valid_addresses;
-    for (const auto address : info.active_addresses)
-        if (devicemanager.GetDevice(address) != nullptr)
+    std::vector<DeviceKey> valid_addresses;
+    for (const auto address : info.active_devices)
+        if (bus_manager.GetDevice(address) != nullptr)
             valid_addresses.push_back(address);
 
     const auto* viewport = ImGui::GetMainViewport();
@@ -52,73 +52,73 @@ void setupDockLayout(I2CDeviceManager& devicemanager, const I2CEventProcessor::I
             const float ratio = 1.0F / static_cast<float>(valid_addresses.size() - index);
             ImGui::DockBuilderSplitNode(remaining_id, ImGuiDir_Left, ratio, &device_id, &remaining_id);
         }
-        const auto window_name = DeviceWindow::name(*devicemanager.GetDevice(address), address);
+        const auto window_name = DeviceWindow::name(*bus_manager.GetDevice(address), address);
         ImGui::DockBuilderDockWindow(window_name.c_str(), device_id);
     }
     ImGui::DockBuilderFinish(dockspace_id);
 }
 } // namespace
 
-void MainWindow::reset(const I2CEventProcessor::Info& info)
+void MainWindow::reset(const I2CBusManager::Info& info)
 {
     control_panel_.resetJumpInput();
-    time_format_ = info.has_absolute_timestamps ? TimeValue::DisplayFormat::ShortLocal
+    time_format_ = info.timeline.has_absolute_timestamps ? TimeValue::DisplayFormat::ShortLocal
                                                : TimeValue::DisplayFormat::RawCsv;
     timeline_view_ = {};
     device_window_states_.clear();
-    for (const auto address : info.active_addresses)
+    for (const auto address : info.active_devices)
         device_window_states_.try_emplace(address);
-    timeline_sync_.selectTime(info.timestamps.empty() ? 0 : info.min_timestamp);
+    timeline_sync_.selectTime(info.timeline.timestamps.empty() ? 0 : info.timeline.min_timestamp);
     first_layout_ = true;
     arrange_devices_ = false;
 }
 
-void MainWindow::refreshLive(I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info)
+void MainWindow::refreshLive(I2CBusManager& bus_manager, const I2CBusManager::Info& info)
 {
-    timeline_sync_.selectTime(info.max_timestamp);
-    TimelineView::rebuild(timeline_view_, devicemanager);
+    timeline_sync_.selectTime(info.timeline.max_timestamp);
+    TimelineView::rebuild(timeline_view_, bus_manager);
 }
 
-void MainWindow::handleArrowKeys(const I2CEventProcessor::Info& info)
+void MainWindow::handleArrowKeys(const I2CBusManager::Info& info)
 {
-    if (info.timestamps.empty() || ImGui::GetIO().WantTextInput)
+    if (info.timeline.timestamps.empty() || ImGui::GetIO().WantTextInput)
         return;
     const auto previous_time = timeline_sync_.position().time;
     auto target_time = previous_time;
-    const auto position = std::ranges::lower_bound(info.timestamps, target_time);
-    auto index = static_cast<std::size_t>(std::distance(info.timestamps.begin(), position));
-    index = std::min(index, info.timestamps.size() - 1);
+    const auto position = std::ranges::lower_bound(info.timeline.timestamps, target_time);
+    auto index = static_cast<std::size_t>(std::distance(info.timeline.timestamps.begin(), position));
+    index = std::min(index, info.timeline.timestamps.size() - 1);
     if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && index > 0)
-        target_time = info.timestamps[index - 1];
-    if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && index + 1 < info.timestamps.size())
-        target_time = info.timestamps[index + 1];
+        target_time = info.timeline.timestamps[index - 1];
+    if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && index + 1 < info.timeline.timestamps.size())
+        target_time = info.timeline.timestamps[index + 1];
     if (target_time != previous_time)
         timeline_sync_.selectTime(target_time);
 }
 
-void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info)
+void MainWindow::renderDeviceList(const I2CBusManager& bus_manager, const I2CBusManager::Info& info)
 {
     if (ViewHelpers::beginFixedLeftWindow("Devices"))
     {
-        ImGui::Text("Devices loaded from JSON: %zu", devicemanager.GetAllDevices().size());
-        const bool any_visible = std::ranges::any_of(info.active_addresses, [&](std::uint8_t address) {
-            return device_window_states_.at(address).visible && devicemanager.GetAllDevices().contains(address);
+        ImGui::Text("Devices loaded from JSON: %zu", bus_manager.GetAllDevices().size());
+        const bool any_visible = std::ranges::any_of(info.active_devices, [&](DeviceKey address) {
+            return device_window_states_.at(address).visible && bus_manager.GetAllDevices().contains(address);
         });
         ImGui::BeginDisabled(!any_visible);
         if (ImGui::Button("Arrange evenly"))
             arrange_devices_ = true;
         ImGui::EndDisabled();
         bool has_devices = false;
-        for (const auto& [address, device] : devicemanager.GetAllDevices())
+        for (const auto& [address, device] : bus_manager.GetAllDevices())
         {
-            if (std::ranges::find(info.active_addresses, address) == info.active_addresses.end())
+            if (std::ranges::find(info.active_devices, address) == info.active_devices.end())
                 continue;
             has_devices = true;
-            ImGui::PushID(static_cast<int>(address));
+            ImGui::PushID(address.label().c_str());
             auto& visible = device_window_states_.at(address).visible;
             ImGui::Checkbox("##Visible", &visible);
             ImGui::SameLine();
-            ImGui::Text("0x%02X  %s", address, device->GetDeviceName().c_str());
+            ImGui::Text("%s  %s", address.label().c_str(), device->GetDeviceName().c_str());
             if (device->GetSnapshotCount() == 0)
             {
                 ImGui::SameLine();
@@ -132,19 +132,19 @@ void MainWindow::renderDeviceList(const I2CDeviceManager& devicemanager, const I
     ImGui::End();
 }
 
-void MainWindow::render(I2CDeviceManager& devicemanager, const I2CEventProcessor::Info& info, const LiveReceiver* live_receiver)
+void MainWindow::render(I2CBusManager& bus_manager, const I2CBusManager::Info& info, const LiveReceiver* live_receiver)
 {
     // Addresses can arrive before any snapshot (and therefore before refreshLive).
     // Initialize visibility before rendering can insert a default false entry.
-    for (const auto address : info.active_addresses)
+    for (const auto address : info.active_devices)
         if (device_window_states_.try_emplace(address).second)
             first_layout_ = true;
 
     const auto dockspace_id = ImGui::GetID("DeviceDockSpace");
     if (first_layout_)
     {
-        TimelineView::rebuild(timeline_view_, devicemanager);
-        setupDockLayout(devicemanager, info, dockspace_id);
+        TimelineView::rebuild(timeline_view_, bus_manager);
+        setupDockLayout(bus_manager, info, dockspace_id);
     }
     if (arrange_devices_)
     {
@@ -152,25 +152,25 @@ void MainWindow::render(I2CDeviceManager& devicemanager, const I2CEventProcessor
         if (const auto* dockspace_node = ImGui::DockBuilderGetNode(dockspace_id);
             dockspace_node != nullptr && dockspace_node->ChildNodes[0] != nullptr)
             left_column_width = dockspace_node->ChildNodes[0]->Size.x;
-        I2CEventProcessor::Info visible_info;
-        for (const auto address : info.active_addresses)
-            if (device_window_states_.at(address).visible && devicemanager.GetDevice(address) != nullptr)
-                visible_info.active_addresses.push_back(address);
-        if (!visible_info.active_addresses.empty())
-            setupDockLayout(devicemanager, visible_info, dockspace_id, left_column_width);
+        I2CBusManager::Info visible_info;
+        for (const auto address : info.active_devices)
+            if (device_window_states_.at(address).visible && bus_manager.GetDevice(address) != nullptr)
+                visible_info.active_devices.push_back(address);
+        if (!visible_info.active_devices.empty())
+            setupDockLayout(bus_manager, visible_info, dockspace_id, left_column_width);
         arrange_devices_ = false;
     }
 
     ImGui::DockSpaceOverViewport(dockspace_id, ImGui::GetMainViewport());
     handleArrowKeys(info);
     auto target_time = timeline_sync_.position().time;
-    const auto control_result = control_panel_.render(devicemanager, info, time_format_, target_time,
+    const auto control_result = control_panel_.render(bus_manager, info.timeline, time_format_, target_time,
                                                       timeline_sync_, live_receiver);
     if (target_time != timeline_sync_.position().time)
         timeline_sync_.selectTime(target_time);
-    const TimeValue::DisplayView time_display(info, time_format_);
-    renderDeviceList(devicemanager, info);
-    TimelineView::render(timeline_view_, devicemanager, time_display, timeline_sync_, control_result.jump_time);
-    DeviceWindow::render(devicemanager, device_window_states_, time_display, timeline_sync_);
+    const TimeValue::DisplayView time_display(info.timeline, time_format_);
+    renderDeviceList(bus_manager, info);
+    TimelineView::render(timeline_view_, bus_manager, time_display, timeline_sync_, control_result.jump_time);
+    DeviceWindow::render(bus_manager, device_window_states_, time_display, timeline_sync_);
     first_layout_ = false;
 }

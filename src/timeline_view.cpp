@@ -14,11 +14,11 @@
 
 namespace
 {
-constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"I2C Address", 80.0F}, {"Device", 119.0F},
+constexpr ViewHelpers::TimelineColumn kTimelineColumns[] = {{"Bus / I2C Address", 165.0F}, {"Device", 119.0F},
                                                              {"Register", 61.0F},    {"Name", 110.0F},
                                                              {"Write Data", 110.0F}, {"Read Data", 110.0F}};
 
-void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2CDeviceManager& devicemanager,
+void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2CBusManager& bus_manager,
                         const TimeValue::DisplayView& display, TimelineSyncState& sync,
                         const bool scroll_to_selected, const bool jump_to_target,
                         ViewHelpers::TimelineFilters<7>& filters)
@@ -38,7 +38,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
     for (std::size_t index = 0; index < rows.size(); ++index)
     {
         const auto& row = rows[index];
-        const auto* device = devicemanager.GetDevice(row.device_address);
+        const auto* device = bus_manager.GetDevice(row.device_address);
         const auto register_label = ViewHelpers::formatTransactionRegister(row, device->GetRegisterAddressBytes() == 0);
         const auto name = row.first_register_address == row.last_register_address
                               ? device->GetRegisterName(row.first_register_address) : std::string("(multiple)");
@@ -46,7 +46,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             return ViewHelpers::matchesTimelineFilter(filters[column].data(), value);
         };
         if ((!filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
-            (!filters[1][0] || matches(1, std::format("0x{:02X}", row.device_address))) &&
+            (!filters[1][0] || matches(1, row.device_address.label())) &&
             (!filters[2][0] || matches(2, device->GetDeviceName())) &&
             (!filters[3][0] || matches(3, register_label)) &&
             (!filters[4][0] || matches(4, name)) &&
@@ -97,8 +97,12 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
         for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index)
         {
             const auto& row = rows[visible_rows[index]];
-            const auto* device = devicemanager.GetDevice(row.device_address);
-            const bool selected = selected_count > 0 && static_cast<std::size_t>(index) == selected_count - 1;
+            const auto* device = bus_manager.GetDevice(row.device_address);
+            const bool selected = sync.position().snapshot
+                                      ? row.device_address == sync.position().snapshot->device_address &&
+                                            row.first_snapshot_index <= sync.position().snapshot->snapshot_index &&
+                                            sync.position().snapshot->snapshot_index <= row.last_snapshot_index
+                                      : selected_count > 0 && static_cast<std::size_t>(index) == selected_count - 1;
             ImGui::PushID(index);
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
@@ -108,7 +112,7 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
             if (scroll_index == static_cast<std::size_t>(index))
                 ImGui::SetScrollHereY(0.5F);
             ImGui::TableSetColumnIndex(1);
-            ImGui::Text("0x%02X", row.device_address);
+            ImGui::TextUnformatted(row.device_address.label().c_str());
             ImGui::TableSetColumnIndex(2);
             ImGui::TextUnformatted(device->GetDeviceName().c_str());
             ImGui::TableSetColumnIndex(3);
@@ -126,24 +130,24 @@ void renderTransactions(const std::vector<ViewHelpers::TransactionRow>& rows, I2
 }
 } // namespace
 
-void TimelineView::rebuild(State& state, const I2CDeviceManager& devicemanager)
+void TimelineView::rebuild(State& state, const I2CBusManager& bus_manager)
 {
     state.access_timeline.clear();
     state.grouped_timeline.clear();
-    for (const auto& [address, device] : devicemanager.GetAllDevices())
+    for (const auto& [address, device] : bus_manager.GetAllDevices())
         for (std::size_t index = 0; index < device->GetSnapshotCount(); ++index)
             state.access_timeline.push_back({device->GetSnapshotByIndex(index).timestamp, address, index});
     std::stable_sort(state.access_timeline.begin(), state.access_timeline.end(),
                      [](const AccessRow& left, const AccessRow& right) { return left.timestamp < right.timestamp; });
-    for (const auto& access : state.access_timeline)
-    {
-        const auto* device = devicemanager.GetAllDevices().at(access.device_address).get();
-        ViewHelpers::appendTransactionByte(state.grouped_timeline, access.device_address, access.snapshot_index,
-                                           device->GetSnapshotByIndex(access.snapshot_index));
-    }
+    // Group within each device before merging; other buses may interleave freely.
+    for (const auto& [key, device] : bus_manager.GetAllDevices())
+        for (std::size_t index = 0; index < device->GetSnapshotCount(); ++index)
+            ViewHelpers::appendTransactionByte(state.grouped_timeline, key, index, device->GetSnapshotByIndex(index));
+    std::stable_sort(state.grouped_timeline.begin(), state.grouped_timeline.end(),
+                    [](const auto& left, const auto& right) { return left.first_timestamp < right.first_timestamp; });
 }
 
-void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
+void TimelineView::render(State& state, I2CBusManager& bus_manager,
                           const TimeValue::DisplayView& display, TimelineSyncState& sync,
                           std::optional<Timestamp> jump_time)
 {
@@ -177,7 +181,7 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
     const bool scroll_to_selected = grouping_changed || sync_pending;
     if (state.group_transactions)
     {
-        renderTransactions(state.grouped_timeline, devicemanager, display, sync, scroll_to_selected,
+        renderTransactions(state.grouped_timeline, bus_manager, display, sync, scroll_to_selected,
                            jump_to_target, state.filters);
         state.applied_revision = sync.revision();
         ImGui::End();
@@ -205,13 +209,13 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
             for (std::size_t index = 0; index < timeline.size(); ++index)
             {
                 const auto& row = timeline[index];
-                const auto* device = devicemanager.GetDevice(row.device_address);
+                const auto* device = bus_manager.GetDevice(row.device_address);
                 const auto& entry = device->GetSnapshotByIndex(row.snapshot_index);
                 const auto matches = [&](std::size_t column, const std::string& value) {
                     return ViewHelpers::matchesTimelineFilter(state.filters[column].data(), value);
                 };
                 if ((!state.filters[0][0] || matches(0, display.formatTimestamp(row.timestamp))) &&
-                    (!state.filters[1][0] || matches(1, std::format("0x{:02X}", row.device_address))) &&
+                    (!state.filters[1][0] || matches(1, row.device_address.label())) &&
                     (!state.filters[2][0] || matches(2, device->GetDeviceName())) &&
                     (!state.filters[3][0] || matches(3, device->GetRegisterAddressBytes() == 0
                                                    ? "-" : std::format("0x{:04X}", entry.updated_register_address))) &&
@@ -265,9 +269,12 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
             for (int index = clipper.DisplayStart; index < clipper.DisplayEnd; ++index)
             {
                 const auto& row = timeline[visible_rows[index]];
-                const auto* device = devicemanager.GetDevice(row.device_address);
+                const auto* device = bus_manager.GetDevice(row.device_address);
                 const auto& entry = device->GetSnapshotByIndex(row.snapshot_index);
-                const bool selected = selected_count > 0 && static_cast<std::size_t>(index) == selected_count - 1;
+                const bool selected = sync.position().snapshot
+                                          ? row.device_address == sync.position().snapshot->device_address &&
+                                                row.snapshot_index == sync.position().snapshot->snapshot_index
+                                          : selected_count > 0 && static_cast<std::size_t>(index) == selected_count - 1;
                 ImGui::PushID(index);
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
@@ -277,7 +284,7 @@ void TimelineView::render(State& state, I2CDeviceManager& devicemanager,
                 if (scroll_index == static_cast<std::size_t>(index))
                     ImGui::SetScrollHereY(0.5F);
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text("0x%02X", row.device_address);
+                ImGui::TextUnformatted(row.device_address.label().c_str());
                 ImGui::TableSetColumnIndex(2);
                 ImGui::TextUnformatted(device->GetDeviceName().c_str());
                 ImGui::TableSetColumnIndex(3);

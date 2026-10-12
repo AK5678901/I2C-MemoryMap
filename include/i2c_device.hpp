@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <set>
 #include <string>
 #include <vector>
@@ -192,6 +193,14 @@ class I2CDeviceManager
 
   public:
     // デバイスの登録
+    void mergeFrom(I2CDeviceManager&& source)
+    {
+        for (const auto& [address, device] : source.devices_)
+            if (devices_.contains(address))
+                throw std::runtime_error("Duplicate device address: " + std::to_string(address));
+        devices_.merge(source.devices_);
+    }
+
     I2CDevice* RegisterDevice(const I2CDevice::Config& config)
     {
         uint8_t addr = config.i2c_dev_addr;

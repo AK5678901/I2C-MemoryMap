@@ -1,6 +1,6 @@
 #pragma once
 
-#include "i2c_device.hpp"
+#include "i2c_bus_manager.hpp"
 #include "timeline_sync.hpp"
 #include "view_helpers.hpp"
 
@@ -20,7 +20,7 @@ struct State
     float statistics_height{200.0F};
 };
 
-std::string name(const I2CDevice& device, std::uint8_t address);
-void render(I2CDeviceManager& devicemanager, std::map<std::uint8_t, State>& states,
+std::string name(const I2CDevice& device, DeviceKey address);
+void render(I2CBusManager& bus_manager, std::map<DeviceKey, State>& states,
             const TimeValue::DisplayView& display, TimelineSyncState& sync);
 } // namespace DeviceWindow

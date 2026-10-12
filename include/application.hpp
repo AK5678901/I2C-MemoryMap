@@ -19,8 +19,7 @@ class Application final
     void runMainLoop();
 
     GuiContext gui_;
-    I2CDeviceManager devicemanager_;
-    I2CEventProcessor processor_;
+    I2CBusManager bus_manager_;
     MainWindow main_window_;
     std::unique_ptr<LiveReceiver> live_receiver_;
 };
