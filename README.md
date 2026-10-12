@@ -73,7 +73,7 @@ UDP 受信は専用スレッドで行い、最大 32,768 フレームのアプ�
     {
       "name": "HDCP_Port_Primary",
       "dev_addr_7bit": "0x3A",
-      "reg_addr_width": 1,
+      "reg_addr_bytes": 1,
       "endian": "little",
 
       // ▼ 動作モード・挙動制御
@@ -103,12 +103,12 @@ UDP 受信は専用スレッドで行い、最大 32,768 フレームのアプ�
 
 * **`name`**: デバイスの表示名（ウィンドウタイトルやタブに反映されます）
 * **`dev_addr_7bit`**: 7ビットI2Cアドレス（16進数文字列、例: `"0x3A"`）
-* **`reg_addr_width`**: レジスタアドレスの幅（バイト数、`0`～`4`まで対応）
+* **`reg_addr_bytes`**: レジスタアドレスの幅（バイト数、`0`～`4`まで対応）
 * **`endian`**: マルチバイトデータのエンディアン（ビット定義を行っている場合に適用されます。現在`"little"`のみ対応。）
 
 ##### 2. 動作モード・挙動制御 ⚙️
 
-* **`auto_addr_inc`**: アドレスの自動インクリメントの有無（`true` / `false`、reg_addr_widthが1以上の時に有効。メモリマップ的なデバイスは`true`、コマンドIDに複数バイト紐づくデバイスは`false`とする）
+* **`auto_addr_inc`**: アドレスの自動インクリメントの有無（`true` / `false`、reg_addr_bytesが1以上の時に有効。メモリマップ的なデバイスは`true`、コマンドIDに複数バイト紐づくデバイスは`false`とする）
 * **`support_direct_read_from_default_reg`**: アドレス指定なしのダイレクトリード時に特定アドレスのレジスタ値が読み出されるかどうか（`true` / `false`、通常のデバイスは`false`とする）
 * **`default_reg_addr`**: ダイレクトリード時やリセット時に参照されるデフォルトアドレス（16進数文字列、support_direct_read_from_default_regが`true`の場合のみ有効）
 
