@@ -23,6 +23,7 @@ set(SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/i2c_event_processor.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/main_window.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/live_receiver.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/live_protocol.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/timeline_view.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/time_value.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/view_helpers.cpp"
@@ -111,6 +112,8 @@ if(BUILD_TESTING)
         add_test(NAME ${test_name} COMMAND ${test_name})
     endfunction()
 
+    add_i2c_memorymap_test(live_protocol_test tests/live_protocol_test.cpp)
+    target_sources(live_protocol_test PRIVATE src/live_protocol.cpp src/i2c_event_processor.cpp)
     add_i2c_memorymap_test(register_history_test tests/register_history_test.cpp)
     add_i2c_memorymap_test(access_statistics_test tests/access_statistics_test.cpp)
     add_i2c_memorymap_test(i2c_event_processor_test tests/i2c_event_processor_test.cpp)

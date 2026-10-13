@@ -26,7 +26,7 @@ int Application::run()
         live_receiver_ = std::make_unique<LiveReceiver>();
         if (!live_receiver_->ready())
         {
-            MessageBoxW(nullptr, L"Could not listen on UDP port 48152.", L"Error", MB_OK | MB_ICONERROR);
+            MessageBoxW(nullptr, L"Could not listen on UDP port 48151.", L"Error", MB_OK | MB_ICONERROR);
             return 1;
         }
         main_window_.reset(bus_manager_.GetInfo());

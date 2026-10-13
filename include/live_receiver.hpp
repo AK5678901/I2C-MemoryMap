@@ -1,11 +1,10 @@
 #pragma once
 
-#include "timestamp.hpp"
+#include "live_protocol.hpp"
 
 class I2CBusManager;
 
 #include <cstdint>
-#include <limits>
 #include <atomic>
 #include <deque>
 #include <mutex>
@@ -24,9 +23,9 @@ class LiveReceiver final
     LiveReceiver& operator=(const LiveReceiver&) = delete;
     [[nodiscard]] bool ready() const { return socket_ != INVALID_SOCKET; }
     [[nodiscard]] bool poll(I2CBusManager& bus_manager, bool& reset);
-    [[nodiscard]] std::uint64_t receivedFrames() const { return received_frames_; }
-    [[nodiscard]] std::uint64_t missingFrames() const { return missing_frames_; }
-    [[nodiscard]] bool hasSequence() const { return has_sequence_; }
+    [[nodiscard]] std::uint64_t receivedFrames() const { return protocol_.receivedFrames(); }
+    [[nodiscard]] std::uint64_t missingFrames() const { return protocol_.missingFrames(); }
+    [[nodiscard]] bool hasSequence() const { return protocol_.hasSequence(); }
     [[nodiscard]] std::size_t queuedFrames() const;
     [[nodiscard]] std::uint64_t droppedQueuedFrames() const { return dropped_queued_frames_.load(); }
     [[nodiscard]] int socketBufferBytes() const { return socket_buffer_bytes_; }
@@ -41,10 +40,5 @@ class LiveReceiver final
     std::deque<std::string> queue_;
     std::atomic<std::uint64_t> dropped_queued_frames_{0};
     int socket_buffer_bytes_{0};
-    Timestamp last_frame_timestamp_{std::numeric_limits<Timestamp>::min()};
-    std::uint64_t last_sequence_{0};
-    std::uint64_t received_frames_{0};
-    std::uint64_t missing_frames_{0};
-    bool has_sequence_{false};
-    bool expect_first_sequence_{false};
+    LiveProtocol protocol_;
 };
