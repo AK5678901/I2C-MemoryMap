@@ -56,6 +56,22 @@
             "configurePreset": "ninja-release"
         }
     ],
+    "packagePresets": [
+        {
+            "name": "ninja-debug-package",
+            "displayName": "Ninja Debug ZIP",
+            "configurePreset": "ninja-debug",
+            "configurations": ["Debug"],
+            "generators": ["ZIP"]
+        },
+        {
+            "name": "ninja-release-package",
+            "displayName": "Ninja Release ZIP",
+            "configurePreset": "ninja-release",
+            "configurations": ["Release"],
+            "generators": ["ZIP"]
+        }
+    ],
     "testPresets": [
         {
             "name": "ninja-debug-test",

@@ -17,6 +17,17 @@ Saleaeのロジックアナライザ(Logic 2アプリ)で取得したI2C通信�
 
 ## 🛠️ 使い方
 
+Windows では、通常の CMake ビルドに `distribution` ターゲットが含まれ、アプリ本体のビルド後に CPack が `dist/I2C_MemoryMap/` と `dist/I2C_MemoryMap.zip` を更新します。配布対象は `CMakeLists.txt` の `install()` で定義しています。Debug／Release ともに、そのビルドの実行ファイルを使用し、最後にビルドした構成で配布物を上書きします。リソースだけの変更・追加・削除も、次のビルドで反映されます。自動実行時はキー入力待ちやアプリ起動を行いません。`i2c_memorymap.exe` は終了してからビルドしてください。
+
+```powershell
+cmake --preset ninja-release
+cmake --build --preset ninja-release-build
+```
+
+アプリと配布物だけを生成する場合は `cmake --build --preset ninja-release-build --target distribution` を使用します。`--target i2c_memorymap` を指定した場合はアプリ本体のみをビルドします。標準の `--target package` でも ZIP を生成できます。ZIP の直下には exe や `devices/` が入ります。
+
+ビルド済みの成果物を再パッケージ化する場合は `cpack --preset ninja-release-package`（Debug は `ninja-debug-package`）を使用します。VS Code では `CMake: Select Package Preset` で構成を選び、Package を実行できます。
+
 ### 1. I2Cログファイル取得
 
 Logic 2アプリからI2CログのCSVファイルを出力します。出力時の設定は以下に合わせてください。

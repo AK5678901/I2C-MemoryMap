@@ -54,6 +54,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory(submodule/glfw)
 target_link_libraries(${PROJECT_NAME} PRIVATE glfw)
 
@@ -67,6 +68,36 @@ if(WIN32)
     endif()
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE GL)
+endif()
+
+# Keep the distribution layout in one place for both install and CPack.
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION . COMPONENT Runtime)
+install(DIRECTORY resources/ DESTINATION . COMPONENT Runtime)
+install(DIRECTORY saleae-live DESTINATION . COMPONENT Runtime
+    PATTERN "__pycache__" EXCLUDE
+)
+install(FILES README.md LICENSE DESTINATION . COMPONENT Runtime)
+
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_FILE_NAME "I2C_MemoryMap")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/packages")
+set(CPACK_COMPONENTS_ALL Runtime)
+set(CPACK_VERBATIM_VARIABLES ON)
+configure_file(cmake/PublishPackage.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/PublishPackage.cmake" @ONLY)
+set(CPACK_POST_BUILD_SCRIPTS "${CMAKE_CURRENT_BINARY_DIR}/PublishPackage.cmake")
+include(CPack)
+
+if(WIN32)
+    # An always-run target also picks up resource additions and deletions.
+    add_custom_target(distribution ALL
+        COMMAND "${CMAKE_CPACK_COMMAND}" --config "${CMAKE_CURRENT_BINARY_DIR}/CPackConfig.cmake"
+            -C "$<CONFIG>"
+        DEPENDS ${PROJECT_NAME}
+        COMMENT "Generating distribution with CPack"
+        VERBATIM
+    )
 endif()
 
 if(BUILD_TESTING)
