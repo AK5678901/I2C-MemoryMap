@@ -126,8 +126,8 @@ std::optional<std::size_t> renderTransactionTimeline(const I2CDevice& device,
         if (found != visible_rows.end())
             scroll_index = static_cast<std::size_t>(std::distance(visible_rows.begin(), found));
     }
-    if (!scroll_index && (scroll_to_selected || filter_changed) && selected_count > 0)
-        scroll_index = selected_count - 1;
+    if (!scroll_index && (scroll_to_selected || filter_changed) && !visible_rows.empty())
+        scroll_index = selected_count > 0 ? selected_count - 1 : 0;
     std::optional<std::size_t> selected_index;
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput)
     {
@@ -231,8 +231,8 @@ std::optional<std::size_t> renderRegisterTimeline(const I2CDevice& device,
         scroll_index = found == visible_rows.end() ? std::nullopt
                       : std::optional<std::size_t>(std::distance(visible_rows.begin(), found));
     }
-    if (!scroll_index && (scroll_to_selected || filter_changed) && selected_count > 0)
-        scroll_index = selected_count - 1;
+    if (!scroll_index && (scroll_to_selected || filter_changed) && !visible_rows.empty())
+        scroll_index = selected_count > 0 ? selected_count - 1 : 0;
     std::optional<std::size_t> selected_index;
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput)
     {
