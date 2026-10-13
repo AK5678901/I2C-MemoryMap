@@ -9,6 +9,7 @@
 #include <functional>
 #include <stdexcept>
 #include <vector>
+#include <algorithm>
 
 namespace
 {
@@ -55,22 +56,58 @@ void readCsv(const std::filesystem::path& filename,
     }
 
     std::string line;
-    std::getline(file, line);
+    if (!std::getline(file, line))
+        throw std::runtime_error("CSV header is missing");
+    if (line.starts_with("\xEF\xBB\xBF"))
+        line.erase(0, 3); // UTF-8 BOM precedes the first column name.
+    const auto header = csvFields(line);
+    const auto column = [&](const std::string& name) {
+        auto found = std::ranges::find(header, name);
+        if (found == header.end() && name == "start_time")
+            found = std::ranges::find(header, "time"); // Legacy CSV header.
+        if (found == header.end())
+            throw std::runtime_error("CSV header is missing column: " + name);
+        if (std::find(std::next(found), header.end(), *found) != header.end())
+            throw std::runtime_error("CSV header has duplicate column: " + name);
+        return static_cast<std::size_t>(std::distance(header.begin(), found));
+    };
+    const auto name_column = column("name");
+    const auto type_column = column("type");
+    const auto time_column = column("start_time");
+    const auto address_column = column("address");
+    const auto read_column = column("read");
+    const auto data_column = column("data");
+    const auto last_column = std::max({name_column, type_column, time_column, address_column, read_column, data_column});
     std::map<std::string, Timestamp> last_times;
+    std::size_t line_number = 1;
 
     while (std::getline(file, line))
     {
+        ++line_number;
         if (line.empty())
             continue;
         const auto fields = csvFields(line);
-        if (fields.size() < 8)
-            throw std::runtime_error("CSV row requires at least eight columns");
-        const auto& name = fields[0];
-        const auto& type = fields[1];
-        const auto& timestamp_text = fields[2];
-        const auto& address_text = fields[5];
-        const auto& read_text = fields[6];
-        const auto& data_text = fields[7];
+        if (fields.size() <= last_column)
+            throw std::runtime_error("CSV line " + std::to_string(line_number) + ": required column is missing");
+        const auto& name = fields[name_column];
+        const auto& type = fields[type_column];
+        const auto& timestamp_text = fields[time_column];
+        const auto& address_text = fields[address_column];
+        const auto& read_text = fields[read_column];
+        const auto& data_text = fields[data_column];
+        const auto parse_byte = [&](const std::string& text, const char* field, unsigned long maximum) {
+            try
+            {
+                std::size_t consumed = 0;
+                const auto value = std::stoul(text, &consumed, 16);
+                if (consumed == text.size() && value <= maximum && text.find('-') == std::string::npos)
+                    return static_cast<std::uint8_t>(value);
+            }
+            catch (const std::invalid_argument&) {}
+            catch (const std::out_of_range&) {}
+            throw std::runtime_error("CSV line " + std::to_string(line_number) + " (bus " + name +
+                                     "): invalid " + field + " value '" + text + "' (expected hexadecimal)");
+        };
         if (name.empty())
             throw std::runtime_error("CSV bus name is empty");
         bool absolute = true;
@@ -104,12 +141,12 @@ void readCsv(const std::filesystem::path& filename,
 
         if (type == "address")
         {
-            const auto address = static_cast<std::uint8_t>(std::stoul(address_text, nullptr, 16));
+            const auto address = parse_byte(address_text, "address", 127);
             emit({I2CEvent::Type::Address, timestamp, address, read_text == "true"});
         }
         else if (type == "data")
         {
-            const auto data = static_cast<std::uint8_t>(std::stoul(data_text, nullptr, 16));
+            const auto data = parse_byte(data_text, "data", 255);
             emit({I2CEvent::Type::Data, timestamp, data});
         }
         else if (type == "stop")

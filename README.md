@@ -17,17 +17,6 @@ Saleaeのロジックアナライザ(Logic 2アプリ)で取得したI2C通信�
 
 ## 🛠️ 使い方
 
-Windows では、通常の CMake ビルドに `distribution` ターゲットが含まれ、アプリ本体のビルド後に CPack が `dist/I2C_MemoryMap/` と `dist/I2C_MemoryMap.zip` を更新します。配布対象は `CMakeLists.txt` の `install()` で定義しています。Debug／Release ともに、そのビルドの実行ファイルを使用し、最後にビルドした構成で配布物を上書きします。リソースだけの変更・追加・削除も、次のビルドで反映されます。自動実行時はキー入力待ちやアプリ起動を行いません。`i2c_memorymap.exe` は終了してからビルドしてください。
-
-```powershell
-cmake --preset ninja-release
-cmake --build --preset ninja-release-build
-```
-
-アプリと配布物だけを生成する場合は `cmake --build --preset ninja-release-build --target distribution` を使用します。`--target i2c_memorymap` を指定した場合はアプリ本体のみをビルドします。標準の `--target package` でも ZIP を生成できます。ZIP の直下には exe や `devices/` が入ります。
-
-ビルド済みの成果物を再パッケージ化する場合は `cpack --preset ninja-release-package`（Debug は `ninja-debug-package`）を使用します。VS Code では `CMake: Select Package Preset` で構成を選び、Package を実行できます。
-
 ### 1. デバイス設定の配置 (`devices/` フォルダ)
 
 デバイス設定を使う場合は、バスが1個の場合も `devices/<バス名>/` フォルダを作成し、その直下にデバイス設定ファイル(JSON)を配置してください。例えば、バス名が `I2C` なら `devices/I2C/` に配置します。各バスフォルダ直下のすべての JSON ファイルを、そのバスの設定として読み込みます。JSONの詳しい記述仕様は**付録**を参照してください。
@@ -167,3 +156,18 @@ UDP 受信は専用スレッドで行い、最大 32,768 フレームのアプ�
 * **`bit_offset`**: 指定バイト内の開始ビット位置（`0`～`7`）
 * **`width`**: ビット幅（例: 1バイト分なら `8`、複数バイトをまたぐ指定も可能です）
 * **`name`**: 各ビットフィールドのラベル（例: `"Bksv[7:0]"` やステータスフラグ名など）
+
+---
+
+## 開発者向け：ビルドと配布物の生成
+
+Windows では、通常の CMake ビルドに `distribution` ターゲットが含まれ、アプリ本体のビルド後に CPack が `dist/I2C_MemoryMap/` と `dist/I2C_MemoryMap.zip` を更新します。配布対象は `CMakeLists.txt` の `install()` で定義しています。Debug／Release ともに、そのビルドの実行ファイルを使用し、最後にビルドした構成で配布物を上書きします。リソースだけの変更・追加・削除も、次のビルドで反映されます。自動実行時はキー入力待ちやアプリ起動を行いません。`i2c_memorymap.exe` は終了してからビルドしてください。
+
+```powershell
+cmake --preset ninja-release
+cmake --build --preset ninja-release-build
+```
+
+アプリと配布物だけを生成する場合は `cmake --build --preset ninja-release-build --target distribution` を使用します。`--target i2c_memorymap` を指定した場合はアプリ本体のみをビルドします。標準の `--target package` でも ZIP を生成できます。ZIP の直下には exe や `devices/` が入ります。
+
+ビルド済みの成果物を再パッケージ化する場合は `cpack --preset ninja-release-package`（Debug は `ninja-debug-package`）を使用します。VS Code では `CMake: Select Package Preset` で構成を選び、Package を実行できます。
